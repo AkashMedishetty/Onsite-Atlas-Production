@@ -6,7 +6,7 @@ const {
   deleteBackup,
   testBackupSystem
 } = require('../controllers/backup.controller');
-const { protect, restrict } = require('../middleware/auth');
+const { protect, restrict } = require('../middleware/auth.middleware');
 
 const router = express.Router();
 

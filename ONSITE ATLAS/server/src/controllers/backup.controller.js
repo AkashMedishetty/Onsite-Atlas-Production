@@ -1,5 +1,5 @@
 const asyncHandler = require('../middleware/async');
-const { sendSuccess } = require('../utils/responseHelpers');
+const { sendSuccess } = require('../utils/responseFormatter');
 const EventBackupRecoveryService = require('../services/EventBackupRecoveryService');
 const logger = require('../config/logger');
 
