@@ -3,6 +3,7 @@ const { User } = require('../models');
 const { createApiError } = require('../middleware/error');
 const logger = require('../utils/logger');
 const bcrypt = require('bcryptjs');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 /**
  * Register a new user

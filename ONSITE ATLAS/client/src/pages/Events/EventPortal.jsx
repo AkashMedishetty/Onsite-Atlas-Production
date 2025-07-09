@@ -22,7 +22,11 @@ import {
   ShieldCheckIcon,
   EnvelopeIcon,
   QrCodeIcon,
-  UserIcon
+  UserIcon,
+  CurrencyRupeeIcon,
+  AcademicCapIcon,
+  ChatBubbleLeftRightIcon,
+  PaintBrushIcon
 } from '@heroicons/react/24/outline';
 import { Card, Tabs, Badge, Button, Spinner, Alert, SafeCard } from '../../components/common';
 import eventService from '../../services/eventService';
@@ -56,6 +60,8 @@ import {
   AbstractsTab as AbstractsSettingsTab,  // Alias to avoid conflict
   ScheduleTab  // Add the new ScheduleTab import
 } from './settings';
+import PricingRulesTab from './settings/PricingRulesTab';
+import WorkshopsTab from './settings/WorkshopsTab';
 // import SponsorsSettingsTab from './settings/SponsorsSettingsTab'; // Import the new Sponsors settings tab
 
 // Import dedicated tab components
@@ -67,6 +73,7 @@ import SponsorsList from '../../pages/SponsorManagement/SponsorsList'; // Added 
 import SponsorForm from '../../pages/SponsorManagement/SponsorForm'; // Import SponsorForm
 import AnnouncementsTab from './announcements/AnnouncementsTab'; // Import the AnnouncementsTab component
 import EventClientTab from './tabs/EventClientTab'; // To be created
+import PaymentsPage from '../Payments/PaymentsPage'; // Added import
 
 // Simple error boundary component for tabs - RESTORING THIS
 const TabErrorBoundary = ({ children, tabName }) => {
@@ -120,6 +127,7 @@ const eventNavItems = [
   { id: "landing-pages", label: "Landing Pages", icon: <LinkIcon className="w-5 h-5" /> },
   { id: "emails", label: "Emails", icon: <FiMail /> },
   { id: "reports", label: "Reports", icon: <FiBarChart2 /> },
+  { id: "payments", label: "Payments", icon: <FiPrinter /> },
   { id: "user-management", label: "User Management", icon: <UserGroupIcon className="w-5 h-5" /> },
   { id: "client", label: "Client", icon: <UserIcon className="w-5 h-5" /> },
   { id: "settings", label: "Settings", icon: <FiSettings /> }
@@ -278,7 +286,7 @@ function EventPortal() {
   // Get the current tab index for the Tabs component
   const currentTabIndex = tabIdToIndex[activeTab] || 0;
   
-  // Handle navigation back from the location state more robustly
+  // Main data loading effect and active tab synchronization
   useEffect(() => {
     const locationState = location.state || {};
     
@@ -298,7 +306,7 @@ function EventPortal() {
     if (locationState.subSection) {
       // Ensure the main tab associated with the subSection is active
       const mainTab = location.pathname.split('/')[3]; // e.g., 'settings' from /events/123/settings
-      if (mainTab && activeTab !== mainTab && eventNavItems.some(item => item.id === mainTab)) {
+      if (mainTab && eventNavItems.some(item => item.id === mainTab)) {
          setActiveTab(mainTab);
       }
       return;
@@ -334,15 +342,17 @@ function EventPortal() {
       }
     }
     
-    // Set the active tab state
-    if (activeTab !== determinedTab) {
-        setActiveTab(determinedTab);
+    // Only set the active tab state if it's actually different
+    setActiveTab(prevTab => {
+      if (prevTab !== determinedTab) {
+        // Store in localStorage when tab changes
+        localStorage.setItem(`event_${id}_active_tab`, determinedTab);
+        return determinedTab;
       }
-    
-    // Ensure localStorage is consistent with the final determined tab
-    localStorage.setItem(`event_${id}_active_tab`, determinedTab);
+      return prevTab;
+    });
 
-  }, [id, location.pathname, location.state, navigate, eventNavItems, activeTab]); // Added activeTab to dependencies
+  }, [id, location.pathname, location.state, navigate, eventNavItems]); // REMOVED activeTab dependency
   
   // Main data loading effect and active tab synchronization
   useEffect(() => {
@@ -791,6 +801,9 @@ function EventPortal() {
       case "reports":
         activeTabContent = <TabErrorBoundary tabName="Reports"><ReportsTab eventId={id} /></TabErrorBoundary>;
         break;
+      case "payments":
+        activeTabContent = <TabErrorBoundary tabName="Payments"><PaymentsPage /></TabErrorBoundary>;
+        break;
       case "user-management":
         activeTabContent = (
           <TabErrorBoundary tabName="User Management">
@@ -810,21 +823,28 @@ function EventPortal() {
           <TabErrorBoundary tabName="Settings">
             <div className="p-2">
               {/* Tabs for different settings categories */}
+              <div className="overflow-x-auto whitespace-nowrap hide-scrollbar">
               <Tabs
                 tabs={[
                   { label: "General", component: GeneralTab, icon: <Cog6ToothIcon className="w-5 h-5 mr-2" /> },
                   { label: "Registration", component: RegistrationTab, icon: <UserPlusIcon className="w-5 h-5 mr-2" /> },
-                  // { label: "Sponsors", component: SponsorsSettingsTab, icon: <BookmarkIcon className="w-5 h-5 mr-2" /> }, // Removed Sponsors
                   { label: "Badges", component: BadgesTab, icon: <CheckBadgeIcon className="w-5 h-5 mr-2" /> },
                   { label: "Email", component: EmailTab, icon: <EnvelopeIcon className="w-5 h-5 mr-2" /> },
                   { label: "Payment", component: PaymentTab, icon: <ChartPieIcon className="w-5 h-5 mr-2" /> },
+                  { label: "Pricing", component: PricingRulesTab, icon: <CurrencyRupeeIcon className="w-5 h-5 mr-2" /> },
+                  { label: "Workshops", component: WorkshopsTab, icon: <AcademicCapIcon className="w-5 h-5 mr-2" /> },
                   { label: "Resources", component: ResourcesSettingsTab, icon: <CubeIcon className="w-5 h-5 mr-2" /> },
                   { label: "Abstracts", component: AbstractsSettingsTab, icon: <DocumentTextIcon className="w-5 h-5 mr-2" /> },
                   { label: "Schedule", component: ScheduleTab, icon: <CalendarIcon className="w-5 h-5 mr-2" /> },
+
+                  { label: "Certificates", component: "CertificatesSettingsTab", icon: <AcademicCapIcon className="w-5 h-5 mr-2" /> },
+                  { label: "Communications", component: "CommunicationsSettingsTab", icon: <ChatBubbleLeftRightIcon className="w-5 h-5 mr-2" /> },
+                  { label: "Themes", component: "ThemesSettingsTab", icon: <PaintBrushIcon className="w-5 h-5 mr-2" /> },
                 ]}
                 activeTab={activeSettingsTab}
                 onChange={setActiveSettingsTab}
               />
+              </div>
               <div className="mt-4">
                 {(() => {
                   switch (activeSettingsTab) {
@@ -832,19 +852,414 @@ function EventPortal() {
                       return <GeneralTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} id={id} />;
                     case 1: // Registration
                       return <RegistrationTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} id={id} />;
-                    // Case 2 (Sponsors) removed
-                    case 2: // Badges (was 3)
+                    case 2: // Badges
                       return <BadgesTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} id={id} />;
-                    case 3: // Email (was 4)
+                    case 3: // Email
                       return <EmailTab event={event} eventId={id} setEvent={updateEvent} setFormChanged={setFormChanged} />;
-                    case 4: // Payment (was 5)
+                    case 4: // Payment
                       return <PaymentTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} />;
-                    case 5: // Resources (was 6)
+                    case 5: // Pricing
+                      return <PricingRulesTab />;
+                    case 6: // Workshops
+                      return <WorkshopsTab />;
+                    case 7: // Resources
                       return <ResourcesSettingsTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} />;
-                    case 6: // Abstracts (was 7)
+                    case 8: // Abstracts
                       return <AbstractsSettingsTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} updateAbstractSettings={updateAbstractSettings} />;
-                    case 7: // Schedule (was 8)
+                    case 9: // Schedule
                       return <ScheduleTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} />;
+                    case 10: // Certificates
+                      return (
+                        <div className="p-6">
+                          <h2 className="text-2xl font-bold mb-6">Certificate Settings</h2>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <Card className="p-6">
+                              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                                <AcademicCapIcon className="w-5 h-5 mr-2" />
+                                Certificate Templates
+                              </h3>
+                              <p className="text-gray-600 mb-4">Upload and manage certificate templates for this event</p>
+                              <input
+                                type="file"
+                                accept=".pdf,.png,.jpg,.jpeg"
+                                className="mb-4 w-full p-2 border border-gray-300 rounded"
+                              />
+                              <Button variant="primary" className="w-full">
+                                Upload Template
+                              </Button>
+                            </Card>
+                            
+                            <Card className="p-6">
+                              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                                <UserGroupIcon className="w-5 h-5 mr-2" />
+                                Certificate Entitlements
+                              </h3>
+                              <p className="text-gray-600 mb-4">Configure who receives certificates</p>
+                              <div className="space-y-3">
+                                <label className="flex items-center">
+                                  <input type="checkbox" className="mr-2" defaultChecked />
+                                  <span>All registered participants</span>
+                                </label>
+                                <label className="flex items-center">
+                                  <input type="checkbox" className="mr-2" />
+                                  <span>Only checked-in participants</span>
+                                </label>
+                                <label className="flex items-center">
+                                  <input type="checkbox" className="mr-2" />
+                                  <span>Abstract authors only</span>
+                                </label>
+                                <label className="flex items-center">
+                                  <input type="checkbox" className="mr-2" />
+                                  <span>Workshop attendees only</span>
+                                </label>
+                              </div>
+                            </Card>
+                            
+                            <Card className="p-6">
+                              <h3 className="text-lg font-semibold mb-4">Certificate Fields</h3>
+                              <div className="space-y-3">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Participant Name Field</label>
+                                  <input
+                                    type="text"
+                                    placeholder="{{participantName}}"
+                                    className="w-full p-2 border border-gray-300 rounded"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Event Name Field</label>
+                                  <input
+                                    type="text"
+                                    placeholder="{{eventName}}"
+                                    className="w-full p-2 border border-gray-300 rounded"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Date Field</label>
+                                  <input
+                                    type="text"
+                                    placeholder="{{eventDate}}"
+                                    className="w-full p-2 border border-gray-300 rounded"
+                                  />
+                                </div>
+                              </div>
+                            </Card>
+                            
+                            <Card className="p-6">
+                              <h3 className="text-lg font-semibold mb-4">Issue Certificates</h3>
+                              <p className="text-gray-600 mb-4">Bulk generate and issue certificates</p>
+                              <div className="space-y-3">
+                                <Button variant="primary" className="w-full">
+                                  Generate All Certificates
+                                </Button>
+                                <Button variant="outline" className="w-full">
+                                  Preview Certificate
+                                </Button>
+                                <Button variant="light" className="w-full">
+                                  Download Sample
+                                </Button>
+                              </div>
+                            </Card>
+                          </div>
+                        </div>
+                      );
+                    case 11: // Communications
+                      return (
+                        <div className="p-6">
+                          <h2 className="text-2xl font-bold mb-6">Communication Settings</h2>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <Card className="p-6">
+                              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                                <ChatBubbleLeftRightIcon className="w-5 h-5 mr-2" />
+                                WhatsApp Integration
+                              </h3>
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="flex items-center">
+                                    <input type="checkbox" className="mr-2" />
+                                    <span>Enable WhatsApp notifications</span>
+                                  </label>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Business API URL</label>
+                                  <input
+                                    type="url"
+                                    placeholder="https://api.whatsapp.com/..."
+                                    className="w-full p-2 border border-gray-300 rounded"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">API Token</label>
+                                  <input
+                                    type="password"
+                                    placeholder="Enter WhatsApp API token"
+                                    className="w-full p-2 border border-gray-300 rounded"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number ID</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Enter phone number ID"
+                                    className="w-full p-2 border border-gray-300 rounded"
+                                  />
+                                </div>
+                              </div>
+                            </Card>
+                            
+                            <Card className="p-6">
+                              <h3 className="text-lg font-semibold mb-4">SMS Configuration</h3>
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="flex items-center">
+                                    <input type="checkbox" className="mr-2" />
+                                    <span>Enable SMS notifications</span>
+                                  </label>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">SMS Provider</label>
+                                  <select className="w-full p-2 border border-gray-300 rounded">
+                                    <option value="">Select Provider</option>
+                                    <option value="twilio">Twilio</option>
+                                    <option value="textlocal">TextLocal</option>
+                                    <option value="msg91">MSG91</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                                  <input
+                                    type="password"
+                                    placeholder="Enter SMS API key"
+                                    className="w-full p-2 border border-gray-300 rounded"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Sender ID</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Enter sender ID"
+                                    className="w-full p-2 border border-gray-300 rounded"
+                                  />
+                                </div>
+                              </div>
+                            </Card>
+                            
+                            <Card className="p-6">
+                              <h3 className="text-lg font-semibold mb-4">Message Templates</h3>
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Registration Confirmation</label>
+                                  <textarea
+                                    rows="3"
+                                    placeholder="Thank you {{name}} for registering for {{eventName}}..."
+                                    className="w-full p-2 border border-gray-300 rounded"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Payment Link</label>
+                                  <textarea
+                                    rows="3"
+                                    placeholder="Hi {{name}}, please complete payment: {{paymentLink}}"
+                                    className="w-full p-2 border border-gray-300 rounded"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Event Reminder</label>
+                                  <textarea
+                                    rows="3"
+                                    placeholder="Reminder: {{eventName}} starts tomorrow at {{venue}}"
+                                    className="w-full p-2 border border-gray-300 rounded"
+                                  />
+                                </div>
+                              </div>
+                            </Card>
+                            
+                            <Card className="p-6">
+                              <h3 className="text-lg font-semibold mb-4">Communication Triggers</h3>
+                              <div className="space-y-3">
+                                <label className="flex items-center">
+                                  <input type="checkbox" className="mr-2" />
+                                  <span>Send welcome message on registration</span>
+                                </label>
+                                <label className="flex items-center">
+                                  <input type="checkbox" className="mr-2" />
+                                  <span>Send payment links automatically</span>
+                                </label>
+                                <label className="flex items-center">
+                                  <input type="checkbox" className="mr-2" />
+                                  <span>Send event reminders 24h before</span>
+                                </label>
+                                <label className="flex items-center">
+                                  <input type="checkbox" className="mr-2" />
+                                  <span>Send certificate notifications</span>
+                                </label>
+                              </div>
+                            </Card>
+                          </div>
+                        </div>
+                      );
+                    case 12: // Themes
+                      return (
+                        <div className="p-6">
+                          <h2 className="text-2xl font-bold mb-6">Event Theme Configuration</h2>
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <div className="lg:col-span-2">
+                              <Card className="p-6">
+                                <h3 className="text-lg font-semibold mb-4 flex items-center">
+                                  <PaintBrushIcon className="w-5 h-5 mr-2" />
+                                  Color Scheme
+                                </h3>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Primary Color</label>
+                                    <div className="flex space-x-2">
+                                      <input
+                                        type="color"
+                                        defaultValue="#3B82F6"
+                                        className="w-12 h-10 border border-gray-300 rounded"
+                                      />
+                                      <input
+                                        type="text"
+                                        defaultValue="#3B82F6"
+                                        className="flex-1 p-2 border border-gray-300 rounded"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Secondary Color</label>
+                                    <div className="flex space-x-2">
+                                      <input
+                                        type="color"
+                                        defaultValue="#1E40AF"
+                                        className="w-12 h-10 border border-gray-300 rounded"
+                                      />
+                                      <input
+                                        type="text"
+                                        defaultValue="#1E40AF"
+                                        className="flex-1 p-2 border border-gray-300 rounded"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Accent Color</label>
+                                    <div className="flex space-x-2">
+                                      <input
+                                        type="color"
+                                        defaultValue="#F59E0B"
+                                        className="w-12 h-10 border border-gray-300 rounded"
+                                      />
+                                      <input
+                                        type="text"
+                                        defaultValue="#F59E0B"
+                                        className="flex-1 p-2 border border-gray-300 rounded"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Background Color</label>
+                                    <div className="flex space-x-2">
+                                      <input
+                                        type="color"
+                                        defaultValue="#F8FAFC"
+                                        className="w-12 h-10 border border-gray-300 rounded"
+                                      />
+                                      <input
+                                        type="text"
+                                        defaultValue="#F8FAFC"
+                                        className="flex-1 p-2 border border-gray-300 rounded"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                                
+                                <div className="mt-6">
+                                  <h4 className="font-medium mb-3">Typography</h4>
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 mb-1">Brand Font</label>
+                                      <select className="w-full p-2 border border-gray-300 rounded">
+                                        <option value="Inter">Inter</option>
+                                        <option value="Roboto">Roboto</option>
+                                        <option value="Open Sans">Open Sans</option>
+                                        <option value="Lato">Lato</option>
+                                        <option value="Montserrat">Montserrat</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 mb-1">Text Color</label>
+                                      <div className="flex space-x-2">
+                                        <input
+                                          type="color"
+                                          defaultValue="#1F2937"
+                                          className="w-12 h-10 border border-gray-300 rounded"
+                                        />
+                                        <input
+                                          type="text"
+                                          defaultValue="#1F2937"
+                                          className="flex-1 p-2 border border-gray-300 rounded"
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </Card>
+                              
+                              <Card className="p-6 mt-6">
+                                <h3 className="text-lg font-semibold mb-4">Layout Settings</h3>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Border Radius</label>
+                                    <select className="w-full p-2 border border-gray-300 rounded">
+                                      <option value="0.25rem">Small (4px)</option>
+                                      <option value="0.5rem" defaultSelected>Medium (8px)</option>
+                                      <option value="0.75rem">Large (12px)</option>
+                                      <option value="1rem">Extra Large (16px)</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Shadow Intensity</label>
+                                    <select className="w-full p-2 border border-gray-300 rounded">
+                                      <option value="none">None</option>
+                                      <option value="light">Light</option>
+                                      <option value="medium" defaultSelected>Medium</option>
+                                      <option value="heavy">Heavy</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              </Card>
+                            </div>
+                            
+                            <div>
+                              <Card className="p-6">
+                                <h3 className="text-lg font-semibold mb-4">Theme Preview</h3>
+                                <div className="space-y-4">
+                                  <div className="p-4 rounded" style={{backgroundColor: '#3B82F6', color: 'white'}}>
+                                    <h4 className="font-semibold">Primary Color</h4>
+                                    <p className="text-sm opacity-90">Main theme color</p>
+                                  </div>
+                                  <div className="p-4 rounded" style={{backgroundColor: '#1E40AF', color: 'white'}}>
+                                    <h4 className="font-semibold">Secondary Color</h4>
+                                    <p className="text-sm opacity-90">Supporting color</p>
+                                  </div>
+                                  <div className="p-4 rounded" style={{backgroundColor: '#F59E0B', color: 'white'}}>
+                                    <h4 className="font-semibold">Accent Color</h4>
+                                    <p className="text-sm opacity-90">Highlight color</p>
+                                  </div>
+                                </div>
+                                
+                                <div className="mt-6">
+                                  <Button variant="outline" className="w-full mb-3">
+                                    Preview in New Tab
+                                  </Button>
+                                  <Button variant="light" className="w-full">
+                                    Reset to Default
+                                  </Button>
+                                </div>
+                              </Card>
+                            </div>
+                          </div>
+                        </div>
+                      );
                     default:
                       return <div>Select a settings category.</div>;
                   }
@@ -871,19 +1286,85 @@ function EventPortal() {
                     onClick={async () => {
                       try {
                         console.log("Saving event settings...");
-                        setLoading(true); // Indicate loading state
-                        // Ensure eventService.updateEvent is correctly defined and imported
-                        await eventService.updateEvent(id, event); 
+                        setLoading(true);
+                        
+                        let updateData = {};
+                        
+                        // Create targeted update based on which settings tab is active
+                        if (activeSettingsTab === 0) { // General Tab
+                          console.log("Saving General tab - creating targeted update");
+                          updateData = {
+                            name: event.name,
+                            description: event.description,
+                            startDate: event.startDate,
+                            endDate: event.endDate,
+                            location: event.location,
+                            status: event.status,
+                            maxAttendees: event.maxAttendees,
+                            landingPageUrl: event.landingPageUrl,
+                            eventWebsite: event.eventWebsite,
+                            eventHashtag: event.eventHashtag,
+                            eventCode: event.eventCode,
+                            bannerImage: event.bannerImage,
+                            // Only include safe venue fields
+                            venue: {
+                              name: event.location || event.venue?.name || '',
+                              address: event.venue?.address || '',
+                              city: event.venue?.city || '',
+                              state: event.venue?.state || '',
+                              country: event.venue?.country || '',
+                              zipCode: event.venue?.zipCode || ''
+                            },
+                            // Only include safe registration settings (no complex arrays)
+                            registrationSettings: {
+                              idPrefix: event.registrationSettings?.idPrefix || 'REG',
+                              startNumber: event.registrationSettings?.startNumber || 1,
+                              isOpen: event.registrationSettings?.isOpen ?? true,
+                              allowOnsite: event.registrationSettings?.allowOnsite ?? true
+                            }
+                          };
+                          
+                          // Remove undefined values to prevent validation issues
+                          Object.keys(updateData).forEach(key => {
+                            if (updateData[key] === undefined) {
+                              delete updateData[key];
+                            }
+                          });
+                          
+                          // Handle nested objects - remove undefined nested values
+                          if (updateData.venue) {
+                            Object.keys(updateData.venue).forEach(key => {
+                              if (updateData.venue[key] === undefined) {
+                                delete updateData.venue[key];
+                              }
+                            });
+                          }
+                          
+                          if (updateData.registrationSettings) {
+                            Object.keys(updateData.registrationSettings).forEach(key => {
+                              if (updateData.registrationSettings[key] === undefined) {
+                                delete updateData.registrationSettings[key];
+                              }
+                            });
+                          }
+                          
+                        } else {
+                          // For other tabs, send the full event object (existing behavior)
+                          updateData = event;
+                        }
+                        
+                        console.log("Sending update data:", updateData);
+                        await eventService.updateEvent(id, updateData); 
                         setFormChanged(false);
-                        // Optionally, trigger a full portal refresh or just show success
-                        // await handleRefresh(); // If you want to refresh everything
                         console.log("Event settings saved successfully");
-                         // Consider adding a success toast notification here
+                        
+                        // Refresh event data after successful save
+                        await loadEventData();
                       } catch (err) {
                         console.error("Error saving event settings:", err);
                         // Consider adding an error toast notification here
                       } finally {
-                        setLoading(false); // End loading state
+                        setLoading(false);
                       }
                     }}
                   >
@@ -900,11 +1381,25 @@ function EventPortal() {
     }
 
     // Render AnimatePresence with only ONE direct child: the motion.div
-    // keyed by the activeTab state AND the full path to ensure re-renders on sub-path changes
+    // Key should only change when tab content actually changes, not on sub-navigation
+    const getAnimationKey = () => {
+      // Only include pathname if it's a major navigation change (different main tab)
+      const pathSegments = location.pathname.split('/');
+      const urlTab = pathSegments[3] || 'dashboard';
+      
+      // If URL tab matches active tab, just use activeTab
+      // If they differ, it means we're in a sub-route, so include pathname
+      if (urlTab === activeTab) {
+        return activeTab;
+      } else {
+        return `${activeTab}-${urlTab}`;
+      }
+    };
+
     return (
                 <AnimatePresence mode="wait">
                     <motion.div
-          key={`${activeTab}-${location.pathname}`} // Change key to include pathname
+          key={getAnimationKey()} // Optimized key to reduce unnecessary re-mounts
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}

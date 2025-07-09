@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRegistrantAuth } from '../../contexts/RegistrantAuthContext.jsx';
+import { useRegistrantAuth } from '../../contexts/RegistrantAuthContext';
 import { FaUser, FaIdCard, FaEnvelope, FaPhone, FaBuilding, FaBriefcase, FaGlobe, FaCalendarAlt, FaClock, FaInfoCircle, FaCheckCircle, FaTimesCircle, FaPrint, FaEdit, FaSave, FaTimes, FaDownload } from 'react-icons/fa';
 import registrantPortalService from '../../services/registrantPortalService'; // Assuming you have this service
 import { toast } from 'react-toastify';

@@ -3,16 +3,22 @@ const mongoose = require('mongoose');
 const workshopSchema = new mongoose.Schema({
   event: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'Event',
     required: true
   },
   title: {
-    type: String,
+    type: String, trim: true,
     required: true,
     trim: true
   },
   description: {
-    type: String,
+    type: String, trim: true,
     trim: true
   },
   startDateTime: {
@@ -24,7 +30,7 @@ const workshopSchema = new mongoose.Schema({
     required: true
   },
   venue: {
-    type: String,
+    type: String, trim: true,
     trim: true
   },
   capacity: {
@@ -34,10 +40,22 @@ const workshopSchema = new mongoose.Schema({
   },
   registrations: [{
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'Registration'
   }],
   availableFor: [{
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'Category'
   }],
   price: {
@@ -46,7 +64,7 @@ const workshopSchema = new mongoose.Schema({
     min: [0, 'Price cannot be negative']
   },
   currency: {
-    type: String,
+    type: String, trim: true,
     required: true,
     default: 'USD'
   },
@@ -74,6 +92,12 @@ const workshopSchema = new mongoose.Schema({
   attendees: [{
     registration: {
       type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
       ref: 'Registration'
     },
     checkedIn: {
@@ -83,11 +107,23 @@ const workshopSchema = new mongoose.Schema({
     checkinTime: Date,
     checkedInBy: {
       type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
       ref: 'User'
     }
   }],
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'User'
   },
   createdAt: {

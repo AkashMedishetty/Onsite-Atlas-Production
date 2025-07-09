@@ -1,6 +1,7 @@
 const asyncHandler = require('../middleware/async');
 const BadgeTemplate = require('../models/BadgeTemplate');
 const ErrorResponse = require('../utils/errorResponse');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 /**
  * @desc    Get all badge templates
@@ -29,12 +30,12 @@ const getBadgeTemplates = asyncHandler(async (req, res) => {
   }
   
   // Add console log here to see the final query
-  console.log('[getBadgeTemplates] Executing query:', JSON.stringify(query));
+  // console.log('[getBadgeTemplates] Executing query:', JSON.stringify(query));
 
   const templates = await BadgeTemplate.find(query);
 
   // Add console log to see the result
-  console.log('[getBadgeTemplates] Found templates:', JSON.stringify(templates)); // Log the found templates
+  // console.log('[getBadgeTemplates] Found templates:', JSON.stringify(templates)); // Log the found templates
   
   res.status(200).json({
     success: true,

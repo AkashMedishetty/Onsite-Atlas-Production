@@ -652,43 +652,84 @@ const RegistrantDashboard = () => {
 
         {/* Quick Actions Card */}
         <Col lg={4} md={6} xs={12}>
-          <Card style={styles.card} className="dashboard-card h-100">
+          <Card style={styles.card}>
             <Card.Header style={styles.cardHeader}>
-              <FaBars size={20} className="me-2" style={{ color: styles.primaryText.color }} />
-              <Card.Title style={styles.cardTitle}>Quick Actions</Card.Title>
+              <Card.Title style={styles.cardTitle}><FaTicketAlt style={styles.primaryText} className="me-2" />Quick Actions</Card.Title>
             </Card.Header>
-            <Card.Body className="d-grid gap-2 p-3">
-              {/* Corrected "Submit Abstract" button routing */}
-              {activeEventId && (
-                <Button 
-                  as={Link} 
-                  to={`/registrant-portal/abstracts/new`} 
-                  variant="primary" 
-                  style={styles.button} 
-                  className="action-btn submit-abstract-btn"
-                >
-                  <FaFileAlt className="me-2" /> Submit New Abstract
-                </Button>
-              )}
-              {/* Corrected "Edit Profile" button routing */}
+            <Card.Body className="d-grid gap-2">
               <Button 
-                as={Link} 
-                to="/registrant-portal/profile" 
+                variant="primary" 
+                style={styles.button} 
+                onClick={() => setShowBadgeModal(true)}
+                disabled={!registration}
+              >
+                <FaIdBadge className="me-2" />View Badge
+              </Button>
+              
+              {/* NEW: Invoice Download Button */}
+              <Button 
+                variant="outline-primary" 
+                style={styles.button} 
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/payments/public-invoice/${registration?.registrationId}`);
+                    if (response.ok) {
+                      const data = await response.json();
+                      toast.success('Invoice downloaded successfully!');
+                      // In a real implementation, this would trigger a PDF download
+                      console.log('Invoice data:', data);
+                    } else {
+                      toast.error('Failed to download invoice');
+                    }
+                  } catch (error) {
+                    console.error('Error downloading invoice:', error);
+                    toast.error('Error downloading invoice');
+                  }
+                }}
+                disabled={!registration || registration?.paymentStatus !== 'completed'}
+              >
+                <FaFileInvoice className="me-2" />Download Invoice
+              </Button>
+
+              {/* NEW: Certificate Download Button */}
+              <Button 
+                variant="outline-success" 
+                style={styles.button} 
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/certificates/download/${registration?.registrationId}`);
+                    if (response.ok) {
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `Certificate-${registration?.registrationId}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+                      toast.success('Certificate downloaded successfully!');
+                    } else {
+                      toast.error('Certificate not available yet');
+                    }
+                  } catch (error) {
+                    console.error('Error downloading certificate:', error);
+                    toast.error('Error downloading certificate');
+                  }
+                }}
+                disabled={!registration || !registration?.certificateIssued}
+              >
+                <FaRegFileAlt className="me-2" />Download Certificate
+              </Button>
+              
+              <Button 
                 variant="outline-secondary" 
                 style={styles.button} 
-                className="action-btn edit-profile-btn"
+                onClick={handleDownloadBadge}
+                disabled={!registration}
               >
-                <FaUser className="me-2" /> Edit Profile
+                <FaDownload className="me-2" />Download Badge
               </Button>
-              <Button 
-                variant="outline-info" 
-                style={styles.button} 
-                className="action-btn view-badge-modal-btn" 
-                onClick={() => setShowBadgeModal(true)}
-              >
-                <FaQrcode className="me-2" /> View/Download Badge
-              </Button>
-              {/* "View Schedule" button REMOVED */}
             </Card.Body>
           </Card>
         </Col>

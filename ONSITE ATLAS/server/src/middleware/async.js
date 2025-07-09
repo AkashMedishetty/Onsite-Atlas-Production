@@ -7,8 +7,8 @@
 const asyncHandler = fn => (req, res, next) => {
   // console.log('[asyncHandler] Wrapping function:', fn.name); // Removed
   Promise.resolve(fn(req, res, next)).catch(next); // Reverted to original .catch(next)
-  // Promise.resolve(fn(req, res, next)).catch(err => { // Removed detailed logging
-  //   console.error('[asyncHandler] CAUGHT ERROR:', err);
+  // Promise.resolve(fn(req, res, next)).catch(error => { // Removed detailed logging
+  //   console.error('[asyncHandler] CAUGHT ERROR:', error);
   //   console.error('[asyncHandler] Error Name:', err.name);
   //   console.error('[asyncHandler] Error Message:', err.message);
   //   console.error('[asyncHandler] Error Stack:', err.stack);

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Resource = require('../models/Resource');
 const ResourceSetting = require('../models/ResourceSetting');
 const Registration = require('../models/Registration');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 /**
  * @desc    Get enriched resource usage for a registration (for modal)
@@ -89,7 +90,7 @@ exports.getRegistrationResourceUsageModal = async (req, res, next) => {
       count: enriched.length,
       data: enriched
     });
-  } catch (err) {
+  } catch (error) {
     next(err);
   }
 }; 

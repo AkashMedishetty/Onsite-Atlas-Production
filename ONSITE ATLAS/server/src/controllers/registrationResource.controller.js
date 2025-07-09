@@ -6,6 +6,7 @@ const ResourceSetting = require('../models/ResourceSetting');
 const asyncHandler = require('../middleware/async');
 const ErrorResponse = require('../utils/errorResponse');
 const emailService = require('../services/emailService');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 // In-memory caches (eventId -> { map, expires })
 const _mealNameCache = new Map(); // {eventId: {map:{id:name}, expires:number}}

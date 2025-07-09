@@ -158,9 +158,10 @@ const validateUserCreation = (req, res, next) => {
     }
   }
 
-  // Role validation
-  if (role && !['admin', 'manager', 'staff', 'scanner', 'analyst'].includes(role)) {
-    errors.push('Invalid role. Must be one of: admin, manager, staff, scanner, analyst');
+  // Role validation - updated to include all valid system roles
+  const validRoles = ['admin', 'manager', 'staff', 'scanner', 'analyst', 'registrant', 'client', 'sponsor', 'reviewer'];
+  if (role && !validRoles.includes(role)) {
+    errors.push(`Invalid role. Must be one of: ${validRoles.join(', ')}`);
   }
 
   if (errors.length > 0) {

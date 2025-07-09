@@ -11,6 +11,8 @@ import {
 } from '../../components/common';
 import eventService from '../../services/eventService';
 import registrationService from '../../services/registrationService';
+import paymentService from '../../services/paymentService';
+import toast from 'react-hot-toast';
 
 /**
  * Enhanced Registration Portal Component
@@ -54,6 +56,10 @@ const RegistrationPortal = () => {
     fieldOrder: []
   });
   const [registrationSuccess, setRegistrationSuccess] = useState(null);
+  const [quote, setQuote] = useState(null);
+  const [calculating, setCalculating] = useState(false);
+  const [paymentLink, setPaymentLink] = useState(null);
+  const [paymentStatus, setPaymentStatus] = useState(null);
   
   // Load event data and form configuration
   useEffect(() => {
@@ -147,6 +153,29 @@ const RegistrationPortal = () => {
     fetchEventData();
   }, [eventId]);
   
+  // Fetch quote whenever category changes (simple demo)
+  useEffect(() => {
+    if (!eventId || !formData.categoryId) return;
+    const fetchQuote = async () => {
+      try {
+        setCalculating(true);
+        const res = await registrationService.quoteRegistration(eventId, {
+          category: formData.categoryId,
+          workshopIds: [],
+        });
+        if (res.success) {
+          setQuote(res.data);
+        }
+      } catch (err) {
+        console.error('Quote error', err);
+        toast.error('Failed to calculate quote');
+      } finally {
+        setCalculating(false);
+      }
+    };
+    fetchQuote();
+  }, [eventId, formData.categoryId]);
+  
   // Helper to get custom field config by name
   const getCustomFieldConfig = (name) => {
     if (!event || !event.registrationSettings || !Array.isArray(event.registrationSettings.customFields)) return null;
@@ -199,130 +228,51 @@ const RegistrationPortal = () => {
     
     setSubmitting(true);
     try {
-      // Dynamically build customFields from all custom fields in event config
-      let customFields = {};
-      if (event && event.registrationSettings && Array.isArray(event.registrationSettings.customFields)) {
-        event.registrationSettings.customFields.forEach(field => {
-          if (field && field.name && formData[field.name] !== undefined) {
-            customFields[field.name] = formData[field.name];
-          }
-        });
-      }
-      // Add legacy custom fields if present in formData
-      ['dietaryRestrictions','emergencyContact','emergencyPhone','specialRequirements','agreeToTerms'].forEach(f => {
-        if (formData[f] !== undefined && !(f in customFields)) {
-          customFields[f] = formData[f];
-        }
-      });
-      // Build professionalInfo if present
-      let professionalInfo = {};
-      ['mciNumber','membership'].forEach(f => {
-        if (formData[f]) professionalInfo[f] = formData[f];
-      });
-      if (Object.keys(professionalInfo).length === 0) professionalInfo = undefined;
-      // Prepare registration data
-      const registrationData = {
-        eventId: eventId,
+      // Create registration with payment info
+      const regPayload = {
+        ...formData,
+        eventId,
         categoryId: formData.categoryId,
-        personalInfo: {
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          email: formData.email,
-          phone: formData.phone || '',
-          organization: formData.organization || '',
-          title: formData.title || '',
-          address: formData.address || '',
-          city: formData.city || '',
-          state: formData.state || '',
-          country: formData.country || '',
-          postalCode: formData.postalCode || ''
-        },
-        ...(customFields && Object.keys(customFields).length > 0 ? { customFields } : {}),
-        ...(professionalInfo ? { professionalInfo } : {}),
-        isPublic: true
+        seatHoldIds: quote?.seatHoldIds || [],
+        amountCents: quote?.amountCents || 0,
+        currency: 'INR',
       };
-      
-      console.log("Submitting registration data:", registrationData);
-      
-      // Submit registration
-      const response = await registrationService.createRegistrationPublic(eventId, registrationData);
-      
-      if (!response || !response.success) {
-        throw new Error(response?.message || 'Registration failed');
+
+      const regRes = await registrationService.createRegistrationPublic(eventId, regPayload);
+      if (!regRes.success && !regRes.data?.success) {
+        throw new Error(regRes.message || 'Registration failed');
       }
-      
-      // Show success message
-      console.log("Registration response data:", response.data);
-      
-      // Try to extract the registration ID from various possible locations in the response
-      let registrationId = 'Registration ID not available';
-      try {
-        if (response.data) {
-          if (response.data.registrationId) {
-            registrationId = response.data.registrationId;
-          } else if (response.data._id) {
-            registrationId = response.data._id;
-          } else if (response.data.data && typeof response.data.data === 'object') {
-            // Check if the data is nested under a "data" field (common pattern)
-            if (response.data.data.registrationId) {
-              registrationId = response.data.data.registrationId;
-            } else if (response.data.data._id) {
-              registrationId = response.data.data._id;
-            }
-          } else if (typeof response.data === 'object') {
-            // If it's a nested object, look for common ID fields
-            const possibleIdFields = ['_id', 'id', 'registrationId', 'regId', 'registration'];
-            for (const field of possibleIdFields) {
-              if (response.data[field]) {
-                registrationId = response.data[field];
-                break;
-              }
-            }
-            
-            // If we still don't have an ID and data is an object, use a stringified version
-            if (registrationId === 'Registration ID not available') {
-              const dataStr = JSON.stringify(response.data).substring(0, 50);
-              registrationId = `Raw data: ${dataStr}${dataStr.length >= 50 ? '...' : ''}`;
-            }
-          }
+
+      const registrationId = regRes.data?._id || regRes.data?.data?._id;
+
+      const payCfg = event?.paymentConfig || {};
+      const paymentsEnabled = payCfg.extra?.paymentsEnabled !== false; // default true
+      let paymentRequired = payCfg.extra?.paymentRequired !== false; // default true
+      const prCats = payCfg.extra?.paymentRequiredCategories || [];
+      if(prCats.length){
+        // if list specified, payment required only if category in list
+        paymentRequired = prCats.includes(formData.categoryId);
+      }
+
+      if (paymentsEnabled && paymentRequired) {
+        // create payment link with configured provider
+        const provider = payCfg.provider || 'razorpay';
+        const linkRes = await paymentService.createPaymentLink(eventId, {
+          amountCents: quote?.amountCents || 0,
+          provider,
+          registrationId,
+        });
+
+        const redirectUrl = linkRes.data?.url || linkRes.url;
+        if (redirectUrl) {
+          window.location.href = redirectUrl;
+          return; // stop execution, redirecting
         }
-      } catch (error) {
-        console.error("Error extracting registration ID:", error);
       }
-      
-      setRegistrationSuccess({
-        registrationId: registrationId,
-        name: formData.firstName && formData.lastName ? 
-          `${formData.firstName} ${formData.lastName}` :
-          (response.data?.personalInfo ? 
-            `${response.data.personalInfo.firstName} ${response.data.personalInfo.lastName}` : 
-            'Registration completed'),
-        email: formData.email || response.data?.personalInfo?.email || ''
-      });
-      
-      // Clear form data
-      setFormData({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: '',
-        organization: '',
-        title: '',
-        categoryId: categories[0]?._id || '',
-        address: '',
-        city: '',
-        state: '',
-        country: '',
-        postalCode: '',
-        dietaryRestrictions: '',
-        emergencyContact: '',
-        emergencyPhone: '',
-        specialRequirements: '',
-        agreeToTerms: false
-      });
-      
-      // Clear any error status
-      setStatus(null);
+
+      toast.success('Registration submitted successfully.');
+      setRegistrationSuccess({ registrationId, ...formData });
+
     } catch (error) {
       console.error('Registration error:', error);
       // If error is from backend and has a response with a message, show that
@@ -488,6 +438,28 @@ const RegistrationPortal = () => {
     );
   };
   
+  // After registrationSuccess is set, fetch payment status/link
+  useEffect(() => {
+    if (!registrationSuccess) return;
+    // Fetch payment status for this registration
+    (async () => {
+      try {
+        const res = await paymentService.getPayments(eventId, { registrationId: registrationSuccess._id });
+        const payments = res.payments || res.data?.payments || [];
+        const paid = payments.find(p => p.status === 'paid');
+        if (paid) {
+          setPaymentStatus('paid');
+        } else {
+          setPaymentStatus('pending');
+          const link = payments.find(p => p.status === 'initiated' && p.provider !== 'offline');
+          if (link) setPaymentLink(link.invoiceUrl || link.meta?.paymentLink || null);
+        }
+      } catch (err) {
+        setPaymentStatus(null);
+      }
+    })();
+  }, [registrationSuccess, eventId]);
+  
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen">
@@ -549,6 +521,17 @@ const RegistrationPortal = () => {
                 </div>
               </div>
             </div>
+            
+            {paymentStatus === 'pending' && (
+              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 my-4">
+                <div className="font-semibold text-yellow-800 mb-2">Payment Pending</div>
+                {paymentLink ? (
+                  <Button onClick={()=>window.open(paymentLink, '_blank')} className="bg-indigo-600 text-white">Pay Now</Button>
+                ) : (
+                  <div className="text-yellow-700">Please check your email for the payment link or contact the event organizer.</div>
+                )}
+              </div>
+            )}
             
             <div className="text-center space-y-4">
               <p className="text-gray-600">

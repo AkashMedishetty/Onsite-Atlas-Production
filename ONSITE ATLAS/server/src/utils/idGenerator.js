@@ -1,5 +1,5 @@
 const { Registration } = require('../models');
-const { ApiError } = require('../middleware/errorHandler');
+const ApiError = require('./ApiError');
 
 /**
  * Generate a unique registration ID based on event settings

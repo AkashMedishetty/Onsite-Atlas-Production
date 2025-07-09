@@ -63,12 +63,13 @@ const paymentService = {
 
   /**
    * Get invoice for a payment
-   * @param {string} id - Payment ID
+   * @param {string} eventId - Event ID
+   * @param {string} paymentId - Payment ID
    * @returns {Promise} - Promise with invoice data
    */
-  getInvoice: async (id) => {
+  getInvoice: async (eventId, paymentId) => {
     try {
-      const response = await api.get(`/payments/${id}/invoice`);
+      const response = await api.get(`/events/${eventId}/payments/${paymentId}/invoice`, { responseType: 'blob' });
       return response.data;
     } catch (error) {
       throw error;
@@ -199,7 +200,52 @@ const paymentService = {
     } catch (error) {
       throw error;
     }
-  }
+  },
+
+  /**
+   * Fetch payments for an event
+   * @param {string} eventId
+   * @param {object} params { page, limit, status, provider, search }
+   */
+  getPayments: async (eventId, params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    const url = `/events/${eventId}/payments${qs ? `?${qs}` : ''}`;
+    const res = await api.get(url);
+    return res.data;
+  },
+
+  exportPaymentsCsv: async (eventId, params = {}) => {
+    const qs = new URLSearchParams({ ...params, csv: 'true' }).toString();
+    const url = `/events/${eventId}/payments?${qs}`;
+    const res = await api.get(url, { responseType: 'blob' });
+    return res;
+  },
+
+  createPaymentLink: async (eventId, data) => {
+    const res = await api.post(`/events/${eventId}/payments/links`, data);
+    return res.data;
+  },
+
+  getPaymentDetail: async (eventId, paymentId) => {
+    const res = await api.get(`/events/${eventId}/payments/${paymentId}`);
+    return res.data;
+  },
+
+  redeemPaymentLink: async (eventId, token) => {
+    const res = await api.get(`/events/${eventId}/payments/links/${token}/redeem`);
+    return res.data;
+  },
+
+  markPaymentPaid: async (eventId, paymentId)=>{
+    const res = await api.post(`/events/${eventId}/payments/${paymentId}/mark-paid`);
+    return res.data;
+  },
+
+  sendPaymentLinkEmail: async (eventId, registrationId, link) => {
+    // This assumes a backend endpoint exists; if not, you must implement it
+    const res = await api.post(`/events/${eventId}/registrations/${registrationId}/send-payment-link`, { link });
+    return res.data;
+  },
 };
 
 export default paymentService; 

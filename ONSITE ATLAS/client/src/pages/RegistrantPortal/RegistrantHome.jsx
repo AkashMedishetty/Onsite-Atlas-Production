@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useRegistrantAuth } from '../../contexts/RegistrantAuthContext.jsx';
+import { useRegistrantAuth } from '../../contexts/RegistrantAuthContext';
 import { Card, Row, Col, Button, Spinner, Container, Badge, Alert } from 'react-bootstrap';
 import { FaCalendarAlt, FaFileAlt, FaUser, FaBell, FaMapMarkerAlt, FaMicrophone, FaTicketAlt, FaInfoCircle } from 'react-icons/fa';
 import apiRegistrant from '../../services/apiRegistrant';

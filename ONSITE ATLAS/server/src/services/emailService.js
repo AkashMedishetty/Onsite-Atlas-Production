@@ -1,7 +1,7 @@
 const nodemailer = require('nodemailer');
+const logger = require('../config/logger');
 const qrcode = require('qrcode');
 const { Event, Registration } = require('../models');
-const logger = require('../utils/logger');
 const { htmlToText } = require('html-to-text');
 
 /**
@@ -42,9 +42,9 @@ const generateQRCodeBuffer = async (registrationId, eventId) => {
 
     // qrcode.toBuffer produces a PNG Buffer
     return await qrcode.toBuffer(qrData, { type: 'png', errorCorrectionLevel: 'H' });
-  } catch (err) {
-    logger.error('Error generating QR code (buffer):', err);
-    throw err;
+  } catch (error) {
+    logger.error('Error generating QR code (buffer):', error);
+    throw error;
   }
 };
 
@@ -62,9 +62,9 @@ const generateQRCodeDataURL = async (registrationId, eventId) => {
     });
 
     return await qrcode.toDataURL(qrData);
-  } catch (err) {
-    logger.error('Error generating QR code (dataURL):', err);
-    throw err;
+  } catch (error) {
+    logger.error('Error generating QR code (dataURL):', error);
+    throw error;
   }
 };
 
@@ -135,17 +135,17 @@ const sendRegistrationConfirmationEmail = async (registrationId) => {
     
     // Check if email is enabled and registration confirmation is enabled
     if (!event.emailSettings || 
-        !event.emailSettings.enabled || 
-        !event.emailSettings.automaticEmails || 
-        !event.emailSettings.automaticEmails.registrationConfirmation) {
+        !event?.emailSettings.enabled || 
+        !event?.emailSettings.automaticEmails || 
+        !event?.emailSettings.automaticEmails.registrationConfirmation) {
       logger.info(`Registration confirmation emails disabled for event: ${event._id}`);
       return false;
     }
     
     // Check if SMTP settings are configured
-    if (!event.emailSettings.smtpHost || 
-        !event.emailSettings.smtpUser || 
-        !event.emailSettings.smtpPassword) {
+    if (!event?.emailSettings.smtpHost || 
+        !event?.emailSettings.smtpUser || 
+        !event?.emailSettings.smtpPassword) {
       logger.error(`SMTP not configured for event: ${event._id}`);
       return false;
     }
@@ -159,16 +159,16 @@ const sendRegistrationConfirmationEmail = async (registrationId) => {
     
     // Prepare email data
     const emailData = {
-      firstName: registration.personalInfo.firstName || 'Attendee',
-      lastName: registration.personalInfo.lastName || '',
+      firstName: registration?.personalInfo?.firstName || 'Attendee',
+      lastName: registration?.personalInfo?.lastName || '',
       eventName: event.name,
       registrationId: registration.registrationId,
       eventDate: formatDate(event.startDate),
-      eventVenue: event.venue ? `${event.venue.name}, ${event.venue.city}, ${event.venue.country}` : 'Venue information not available'
+      eventVenue: event.venue ? `${event?.venue?.name}, ${event?.venue?.city}, ${event?.venue?.country}` : 'Venue information not available'
     };
     
     // Process email template
-    const emailTemplate = event.emailSettings.templates.registration;
+    const emailTemplate = event?.emailSettings?.templates.registration;
     let emailBody = processTemplate(emailTemplate.body, emailData);
     
     // Replace QR code placeholder with cid reference. The same `cid` is used in
@@ -177,8 +177,8 @@ const sendRegistrationConfirmationEmail = async (registrationId) => {
     
     // Configure email
     const mailOptions = {
-      from: `"${event.emailSettings.senderName}" <${event.emailSettings.senderEmail}>`,
-      to: registration.personalInfo.email,
+      from: `"${event?.emailSettings?.senderName}" <${event?.emailSettings?.senderEmail}>`,
+      to: registration?.personalInfo?.email,
       subject: processTemplate(emailTemplate.subject, emailData),
       html: emailBody,
       text: htmlToText(emailBody, { wordwrap: 130 }),
@@ -193,8 +193,8 @@ const sendRegistrationConfirmationEmail = async (registrationId) => {
     };
     
     // Add reply-to if configured
-    if (event.emailSettings.replyToEmail) {
-      mailOptions.replyTo = event.emailSettings.replyToEmail;
+    if (event?.emailSettings?.replyToEmail) {
+      mailOptions.replyTo = event?.emailSettings?.replyToEmail;
     }
     
     // Send email
@@ -209,10 +209,80 @@ const sendRegistrationConfirmationEmail = async (registrationId) => {
   }
 };
 
+/**
+ * Send invoice email with PDF attachment when payment succeeds
+ * @param {string} paymentId
+ */
+const sendPaymentInvoiceEmail = async (paymentId) => {
+  try {
+    const Payment = require('../models/Payment');
+    const payment = await Payment.findById(paymentId)
+      .populate('event')
+      .populate('registration');
+  if (!payment) {
+      logger.error(`Payment not found: ${paymentId}`);
+      return false;
+    }
+    const event = payment.event;
+    const registration = payment.registration;
+    if (!event?.emailSettings?.enabled) return false;
+    if (!event?.emailSettings.smtpHost) return false;
+
+    const transporter = createTransporter(event.emailSettings);
+
+    const placeholders = {
+      firstName: registration?.personalInfo?.firstName || '',
+      lastName: registration?.personalInfo?.lastName || '',
+      eventName: event.name,
+      amount: (payment.amountCents/100).toFixed(2),
+      currency: payment.currency,
+      registrationId: registration?.registrationId || '',
+    };
+
+    const tmpl = event?.emailSettings?.templates?.paymentInvoice || { subject: 'Payment Confirmation - {{eventName}}', body: 'Dear {{firstName}},<br/><br/>We have received your payment of {{currency}} {{amount}} for {{eventName}}. Your registration ID is {{registrationId}}.<br/><br/>Regards,<br/>Team' };
+
+    const cfgExtra = event.paymentConfig?.extra || {};
+    const subjectTpl = cfgExtra.invoiceEmailSubject || tmpl.subject;
+    const bodyTpl = cfgExtra.invoiceEmailBody || tmpl.body;
+
+    const subject = processTemplate(subjectTpl, placeholders);
+    const htmlBody = processTemplate(bodyTpl, placeholders);
+
+    const path = require('path');
+    const fs = require('fs');
+    const invoicePath = path.join(__dirname, '..', 'public', payment.invoiceUrl || '');
+    const attachments = [];
+    if(fs.existsSync(invoicePath)){
+      attachments.push({ filename: path.basename(invoicePath), path: invoicePath });
+    }
+
+    await transporter.sendMail({
+      from: event?.emailSettings?.senderEmail,
+      to: registration?.personalInfo?.email,
+      subject,
+      html: htmlBody,
+      text: htmlToText(htmlBody),
+      attachments,
+    });
+    return true;
+  } catch (error) { logger.error('sendPaymentInvoiceEmail error',error); return false; }
+};
+
 // Export functions
 module.exports = {
   sendRegistrationConfirmationEmail,
   generateQRCodeDataURL,
   generateQRCodeBuffer,
-  processTemplate
+  processTemplate,
+  sendPaymentInvoiceEmail,
+  sendGenericEmail: async ({ to, subject, html, from }) => {
+    const nodemailer = require('nodemailer');
+    const transporter = nodemailer.createTransport({
+      host: process?.env?.SMTP_HOST || 'localhost',
+      port: process?.env?.SMTP_PORT ? parseInt(process?.env?.SMTP_PORT) : 587,
+      secure: false,
+      auth: process?.env?.SMTP_USER ? { user: process?.env?.SMTP_USER, pass: process?.env?.SMTP_PASS } : undefined,
+    });
+    await transporter.sendMail({ from, to, subject, html });
+  }
 }; 

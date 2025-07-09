@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import eventService from '../../../services/eventService';
 import categoryService from '../../../services/categoryService';
 import emailService from '../../../services/emailService';
+import EmailHistoryDashboard from '../../../components/admin/EmailHistoryDashboard';
 import { FiSend, FiUsers, FiFileText, FiClock, FiAlertCircle, FiCheckCircle } from 'react-icons/fi';
 
 const EmailsTab = () => {
@@ -566,7 +567,7 @@ const EmailsTab = () => {
       <Tabs
         tabs={[
           { id: "compose", label: "Compose Email" },
-          { id: "history", label: "Email History" }
+          { id: "history", label: "Email History & Failures" }
         ]}
         activeTab={activeTab}
         onChange={(index) => {
@@ -578,7 +579,7 @@ const EmailsTab = () => {
 
       <div className="mt-6">
         {activeTab === 'compose' && renderComposeTab()}
-        {activeTab === 'history' && renderHistoryTab()}
+        {activeTab === 'history' && <EmailHistoryDashboard eventId={id} />}
       </div>
 
       {/* Recipient Preview Modal */}

@@ -27,7 +27,7 @@ const {
 
 // Include middleware
 const { protect, protectRegistrant, restrict, protectAuthor } = require('../middleware/auth.middleware');
-const { validate } = require('../middleware/validator.js');
+const { validate } = require('../middleware/validator');
 
 // Include validation schemas
 const schemas = require('../validation/abstract.schemas');

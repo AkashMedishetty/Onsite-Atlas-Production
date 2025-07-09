@@ -1,123 +1,111 @@
 const mongoose = require('mongoose');
+const generateInvoice = require('../services/invoiceService');
 
+/**
+ * Payment Schema
+ * One document per gateway attempt so we can display granular history.
+ * # Reason: decouples money flow from Registration and supports refunds/partial captures.
+ */
 const paymentSchema = new mongoose.Schema({
   event: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'Event',
-    required: true
+    required: true,
+    index: true,
   },
   registration: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Registration'
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
+    ref: 'Registration',
+    index: true,
   },
-  gateway: {
-    type: String,
+  provider: {
+    type: String, trim: true,
     required: true,
-    enum: ['stripe', 'paypal', 'razorpay', 'instamojo']
+    enum: [
+      'razorpay',
+      'instamojo',
+      'stripe',
+      'phonepe',
+      'cashfree',
+      'payu',
+      'paytm',
+      'hdfc',
+      'axis',
+      'offline',
+    ],
+        validate: {
+          validator: function(value) {
+            return !value || this.schema.path(this.$__.path).enumValues.includes(value);
+          },
+          message: 'Invalid enum value'
+        },
+    index: true,
   },
-  amount: {
-    type: Number,
-    required: true
-  },
-  currency: {
-    type: String,
-    required: true,
-    default: 'USD'
-  },
+  providerPaymentId: String, // e.g. razorpay_payment_id
   status: {
-    type: String,
-    enum: ['pending', 'completed', 'failed', 'refunded', 'partially_refunded'],
-    default: 'pending'
+    type: String, trim: true,
+    enum: ['initiated', 'paid', 'failed', 'refunded', 'partial-refund'],
+        validate: {
+          validator: function(value) {
+            return !value || this.schema.path(this.$__.path).enumValues.includes(value);
+          },
+          message: 'Invalid enum value'
+        },
+    default: 'initiated',
+    index: true,
   },
-  gatewayTransactionId: {
-    type: String
+  amountCents: Number,
+  currency: {
+    type: String, trim: true,
+    default: 'INR',
   },
-  gatewayResponse: {
-    type: Object
-  },
-  items: [{
-    type: {
-      type: String,
-      enum: ['registration', 'workshop', 'addon'],
-      required: true
-    },
-    name: String,
-    description: String,
-    quantity: {
-      type: Number,
-      default: 1
-    },
-    unitPrice: Number,
-    totalPrice: Number
-  }],
-  invoiceNumber: String,
+  feeCents: Number, // Fee reported by gateway, if any
+  netCents: Number, // amountCents - feeCents
+  method: String, // card, upi, netbanking etc.
+  capturedAt: Date, // when money captured (paid/refunded)
+  meta: mongoose.Schema.Types.Mixed, // raw gateway response for debugging
   invoiceUrl: String,
-  receiptUrl: String,
-  notes: String,
-  metadata: {
-    type: Object
-  },
-  refunds: [{
-    amount: Number,
-    reason: String,
-    gatewayRefundId: String,
-    refundedAt: Date,
-    refundedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    status: {
-      type: String,
-      enum: ['pending', 'completed', 'failed']
-    }
-  }],
-  paidAt: Date,
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+}, {
+  timestamps: true,
+});
+
+// Ensure idempotency – unique per provider payment id
+paymentSchema.index({ provider: 1, providerPaymentId: 1 }, { unique: true, sparse: true });
+
+paymentSchema.post('save', async function(doc){
+  if(doc.status==='paid' && !doc.invoiceUrl){
+    try{
+      const Registration = require('./Registration');
+      const Event = require('./Event');
+      const reg = await Registration.findById(doc.registration);
+      const event = await Event.findById(doc.event);
+      const path = await generateInvoice({ payment:doc, registration:reg, event });
+      doc.invoiceUrl = path.replace(/.*public/,'');
+      await doc.save();
+      // emit socket
+      const io = require('../server').io;
+      if(io) io.to(event._id.toString()).emit('payments:update');
+    } catch (error) { console.error('Invoice gen error',error); }
+  }
+
+  if(doc.status==='paid' && doc.invoiceUrl){
+    try{
+      const sendEmail = require('../services/emailService').sendPaymentInvoiceEmail;
+      if(sendEmail) await sendEmail(doc._id);
+    } catch (error) { console.error('Invoice email error',error); }
   }
 });
 
-// Generate invoice number on creation
-paymentSchema.pre('save', async function(next) {
-  if (!this.invoiceNumber && this.isNew) {
-    const event = await mongoose.model('Event').findById(this.event).select('name');
-    const eventPrefix = event && event.name ? event.name.substring(0, 3).toUpperCase() : 'INV';
-    const dateStr = new Date().toISOString().substring(0, 10).replace(/-/g, '');
-    const randomSuffix = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    
-    this.invoiceNumber = `${eventPrefix}-${dateStr}-${randomSuffix}`;
-  }
-  
-  // Set paidAt timestamp when payment is completed
-  if (this.isModified('status') && this.status === 'completed' && !this.paidAt) {
-    this.paidAt = new Date();
-  }
-  
-  next();
-});
-
-// Calculate total amount before saving
-paymentSchema.pre('save', function(next) {
-  if (this.isModified('items')) {
-    let total = 0;
-    
-    for (const item of this.items) {
-      const itemTotal = (item.unitPrice || 0) * (item.quantity || 1);
-      item.totalPrice = itemTotal;
-      total += itemTotal;
-    }
-    
-    this.amount = total;
-  }
-  
-  next();
-});
-
-const Payment = mongoose.model('Payment', paymentSchema);
-
-module.exports = Payment; 
+module.exports = mongoose.model('Payment', paymentSchema); 

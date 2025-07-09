@@ -28,7 +28,7 @@ exports.getLogs = asyncHandler(async (req, res, next) => {
   const parsed = lines.map((l) => {
     try {
       return JSON.parse(l);
-    } catch (err) {
+    } catch (error) {
       return { timestamp: null, level: 'raw', message: l };
     }
   });

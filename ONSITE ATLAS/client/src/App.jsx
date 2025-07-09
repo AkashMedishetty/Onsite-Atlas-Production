@@ -1,10 +1,8 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Suspense, lazy } from 'react';
+import React, { Suspense, lazy } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { useParams } from 'react-router-dom';
 
 // Import layouts
 import MainLayout from './layouts/MainLayout';
@@ -41,6 +39,15 @@ import AbstractReview from './pages/AbstractManagement/AbstractReview';
 import ClientLoginPage from './pages/ClientPortal/ClientLoginPage';
 import ClientPortalRoutes from './pages/ClientPortal/ClientPortalRoutes';
 
+// Import Component Registration Components (Internal Settings Only)
+import ComponentConfigManager from './components/admin/ComponentConfigManager';
+import ComponentAnalyticsDashboard from './components/admin/ComponentAnalyticsDashboard';
+import ComponentRegistration from './pages/Events/registrations/ComponentRegistration';
+
+// Import Resource Blocking Components (commented out until components are created)
+// const ResourceBlockingManager = lazy(() => import('./components/admin/ResourceBlockingManager'));
+// const BulkResourceBlocking = lazy(() => import('./components/admin/BulkResourceBlocking'));
+
 // Lazily loaded components
 const EventSettings = lazy(() => import('./pages/Events/EventSettings'));
 const BulkImport = lazy(() => import('./pages/Registration/BulkImport'));
@@ -54,12 +61,14 @@ const UserManagement = lazy(() => import('./pages/Settings/UserManagement'));
 const GlobalSettings = lazy(() => import('./pages/Settings/GlobalSettings'));
 const EmailTemplates = lazy(() => import('./pages/Settings/EmailTemplates'));
 const PaymentGateways = lazy(() => import('./pages/Settings/PaymentGateways'));
+const PaymentsPage = lazy(() => import('./pages/Payments/PaymentsPage'));
 const LoginPage = lazy(() => import('./pages/Auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/Auth/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/Auth/ForgotPasswordPage'));
 const RegistrationPortal = lazy(() => import('./pages/PublicPortals/RegistrationPortal'));
 const SponsorLoginPortal = lazy(() => import('./pages/PublicPortals/SponsorLoginPortal'));
 const SponsorRegistrantManagement = lazy(() => import('./pages/PublicPortals/SponsorRegistrantManagement'));
+const PublicRegistrationLookup = lazy(() => import('./pages/PublicPortals/PublicRegistrationLookup'));
 
 // Reviewer Portal Pages (Lazy Load)
 const ReviewerLoginPage = lazy(() => import('./pages/ReviewerPortal/ReviewerLoginPage'));
@@ -67,8 +76,11 @@ const ReviewerDashboardPage = lazy(() => import('./pages/ReviewerPortal/Reviewer
 const ReviewerAbstractReviewPage = lazy(() => import('./pages/ReviewerPortal/ReviewerAbstractReviewPage'));
 
 // Authentication
-import { AuthProvider } from './contexts/AuthContext.jsx';
-import { RegistrantAuthProvider } from './contexts/RegistrantAuthContext.jsx';
+import { AuthProvider } from './contexts/AuthContext';
+import { RegistrantAuthProvider } from './contexts/RegistrantAuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
+import { ActiveEventProvider } from './contexts/ActiveEventContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 import PrivateRoute from './components/PrivateRoute';
 import PublicRoute from './components/PublicRoute';
 import RegistrantRoute from './components/RegistrantRoute';
@@ -131,9 +143,16 @@ const SponsorDashboard = lazy(() => import('./pages/SponsorPortal/SponsorDashboa
 import sponsorAuthService from './services/sponsorAuthService';
 
 // LoadingFallback component for Suspense
-const LoadingFallback = () => (
+const LoadingFallback = ({ error = null }) => (
   <div className="flex items-center justify-center h-screen">
-    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600"></div>
+    {error ? (
+      <div className="text-center">
+        <div className="text-red-600 mb-4">Error loading component</div>
+        <div className="text-sm text-gray-600">{error.message}</div>
+      </div>
+    ) : (
+      <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600"></div>
+    )}
   </div>
 );
 
@@ -162,20 +181,27 @@ const SponsorRoute = ({ children }) => {
 };
 
 // Add a wrapper for ScannerStation to inject eventId from params
-function ScannerStationWrapper() {
+const ScannerStationWrapper = () => {
   const { id: eventIdFromParams } = useParams();
   return <ScannerStation eventId={eventIdFromParams} />;
-}
+};
 
 const BackupRestore = lazy(() => import('./pages/Settings/BackupRestore'));
 const SystemLogsPage = lazy(() => import('./pages/Settings/SystemLogs'));
 
+const PayRedirect = lazy(() => import('./pages/Payments/PayRedirect')); 
+const PaymentSuccess = lazy(() => import('./pages/Payments/PaymentSuccess')); 
+const PaymentCancel = lazy(() => import('./pages/Payments/PaymentCancel')); 
+
 const App = () => {
   return (
     <Router>
-      <AuthProvider>
-        <RegistrantAuthProvider>
-          <Suspense fallback={<LoadingFallback />}>
+      <ThemeProvider>
+        <AuthProvider>
+          <NotificationProvider>
+            <RegistrantAuthProvider>
+            <ActiveEventProvider>
+              <Suspense fallback={<LoadingFallback />}>
             <Routes>
               {/* Auth Routes */}
               <Route element={<AuthLayout />}>
@@ -192,6 +218,7 @@ const App = () => {
               <Route path="/portal">
                 <Route path="register/:eventId" element={<RegistrationPortal />} />
                 <Route path="abstract/:eventId" element={<AbstractPortal />} />
+                <Route path="registration-lookup/:eventId" element={<PublicRegistrationLookup />} />
                 <Route path="reviewer/:eventId" element={<ReviewerLoginPage />} />
                 <Route path="sponsor-login/:eventId" element={<SponsorLoginPortal />} />
                 <Route path="sponsor-dashboard/:eventId/:sponsorId/registrants" element={<SponsorRegistrantManagement />} />
@@ -230,6 +257,11 @@ const App = () => {
 
               {/* Reviewer Portal Routes */}
               <Route path="/reviewer/login" element={<ReviewerLoginPage />} />
+              <Route path="/reviewer/:eventId" element={<PrivateRoute><ReviewerPortalLayout /></PrivateRoute>}>
+                <Route path="dashboard" element={<ReviewerDashboardPage />} />
+                <Route path="abstract/:abstractId/review" element={<ReviewerAbstractReviewPage />} />
+              </Route>
+              {/* Legacy routes for backward compatibility */}
               <Route element={<PrivateRoute><ReviewerPortalLayout /></PrivateRoute>}>
                 <Route path="/reviewer/dashboard" element={<ReviewerDashboardPage />} />
                 <Route path="/reviewer/abstract/:abstractId/review" element={<ReviewerAbstractReviewPage />} />
@@ -244,45 +276,46 @@ const App = () => {
               </Route>
 
               {/* Main Dashboard and Management Routes */}
-              <Route element={<MainLayout />}>
+              <Route element={<DashboardLayout />}>
                 <Route path="/" element={<Dashboard />} />
                 
-                {/* Events List & Creation/Edit Forms (Remain outside EventPortal) */}
+                {/* Events List & Creation/Edit Forms */}
                 <Route path="/events">
                   <Route index element={<EventList />} />
                   <Route path="new" element={<EventForm />} />
+                  
+                  {/* Specific event routes that should NOT be handled by EventPortal */}
                   <Route path=":id/edit" element={<EventForm />} />
-                  {/* Settings might be separate or handled within EventPortal depending on design */}
-                  {/* <Route path=":id/settings" element={<EventSettings />} /> */}
+                  <Route path=":id/registrations/new" element={<RegistrationForm />} />
+                  <Route path=":id/registrations/bulk-import" element={<BulkImportWizard />} />
+                  <Route path=":id/schedule-management" element={<ScheduleManagement />} />
+                  
+                  {/* Event Portal Route - Handles all other event-specific navigation */}
+                  <Route path=":id/*" element={<EventPortal />} />
                 </Route>
                 
-                {/* Global routes (Categories, Registrations, Resources, Abstracts) - KEEP THESE if they show ALL items across events */}
-                {/* If these should ONLY be event-specific, they can be removed */}
+                {/* Global routes (Categories, Registrations, Resources, Abstracts) */}
                 <Route path="/categories">
                   <Route index element={<CategoryList />} />
-                  {/* <Route path="new" element={<CategoryForm />} /> ... */} 
                 </Route>
                 <Route path="/registrations">
                   <Route index element={<RegistrationList />} />
-                   {/* <Route path="new" element={<RegistrationForm />} /> ... */} 
                 </Route>
                 <Route path="/resources">
                   <Route index element={<ResourceList />} />
-                   {/* <Route path="scanner" element={<ScannerStation />} /> ... */} 
                 </Route>
-                 <Route path="/abstracts">
+                <Route path="/abstracts">
                   <Route index element={<AbstractList />} />
-                   {/* <Route path=":id" element={<AbstractDetail />} /> ... */} 
                 </Route>
 
-                {/* Reports (Likely Global) */}
+                {/* Reports */}
                 <Route path="/reports">
                   <Route index element={<ReportsPage />} />
                   <Route path="builder" element={<ReportBuilder />} />
                   <Route path=":reportType" element={<ReportsPage />} />
                 </Route>
 
-                {/* Settings (Likely Global) */}
+                {/* Settings */}
                 <Route path="/settings">
                   <Route index element={<SettingsPage />} />
                   <Route path="users" element={<UserManagement />} />
@@ -292,73 +325,6 @@ const App = () => {
                   <Route path="backup" element={<BackupRestore />} />
                   <Route path="logs" element={<SystemLogsPage />} />
                 </Route>
-
-                {/* Define specific event sub-routes BEFORE the catch-all portal route */}
-                <Route path="/events/:id/registrations/new" element={<RegistrationForm />} />
-                <Route path="/events/:id/registrations/bulk-import" element={<BulkImportWizard />} />
-                <Route path="/events/:id/schedule-management" element={<ScheduleManagement />} />
-                {/* Add other specific routes like edit here if they should also be outside the portal layout */}
-                {/* <Route path="/events/:id/registrations/:registrationId/edit" element={<RegistrationForm />} /> */}
-
-                {/* Event Portal Route - Handles all event-specific sub-navigation */}
-                {/* The `/*` allows EventPortal to match /events/123, /events/123/dashboard, /events/123/registrations, etc. */}
-                {/* Make sure the nested routes inside EventPortal do NOT duplicate the ones defined above */}
-                <Route path="/events/:id/*" element={<EventPortal />}>
-                  <Route index element={<Navigate to="dashboard" replace />} />
-                  <Route path="dashboard" element={<Dashboard />} />
-                  {/* Adjust the nested 'registrations' route inside EventPortal */}
-                  <Route path="registrations">
-                    {/* Keep the index route for the tab view */}
-                    <Route index element={<RegistrationList />} />
-                    {/* Remove the 'new' route from here as it's defined outside */}
-                    {/* <Route path="new" element={<RegistrationForm />} /> */}
-                    <Route path=":registrationId" element={<RegistrationDetail />} />
-                    {/* Consider moving edit outside as well if needed */}
-                    <Route path=":registrationId/edit" element={<RegistrationForm />} />
-                    {/* Remove the 'bulk-import' route from here as it's defined outside */}
-                    {/* <Route path="bulk-import" element={<BulkImportWizard />} /> */}
-                  </Route>
-                  <Route path="categories">
-                    <Route index element={<CategoryList />} />
-                    <Route path="new" element={<CategoryForm />} />
-                    <Route path=":categoryId" element={<CategoryDetail />} />
-                    <Route path=":categoryId/edit" element={<CategoryForm />} />
-                  </Route>
-                  <Route path="sponsors" element={<SponsorsList />} />
-                  <Route path="resources">
-                    {/* Specific route first */}
-                    <Route path="scanner/:resourceType?" element={<ScannerStationWrapper />} />
-                    {/* Dynamic route next */}
-                    <Route path=":resourceType" element={<ResourcesTab />} />
-                    {/* Index route last (matches if no other sub-path is provided) */}
-                    <Route index element={<ResourcesTab />} />
-                  </Route>
-                  <Route path="abstracts">
-                    <Route index element={<AbstractList />} />
-                    <Route path="new" element={<AbstractForm />} />
-                    <Route path=":abstractId" element={<AbstractDetail />} />
-                    <Route path=":abstractId/edit" element={<AbstractForm />} />
-                  </Route>
-                  <Route path="badges">
-                     <Route index element={<BadgesPage />} />
-                     <Route path="designer" element={<BadgeDesigner />} />
-                     <Route path="designer/:templateId" element={<BadgeDesigner />} />
-                     <Route path="print" element={<BadgePrintingPage />} />
-                  </Route>
-                   <Route path="emails" element={<EmailsPage />} />
-                  <Route path="settings" element={<EventSettings />} />
-                  {/* Add other event-specific routes here */}
-                </Route>
-
-                {/* REMOVE Conflicting Event-Specific Routes that were previously separate */}
-                {/* <Route path="/events/:eventId/dashboard" element={<ClientDashboard />} /> */}
-                {/* <Route path="/events/:eventId/registrations"> ... </Route> */}
-                {/* <Route path="/events/:eventId/categories"> ... </Route> */}
-                {/* <Route path="/events/:eventId/resources"> ... </Route> */}
-                {/* <Route path="/events/:eventId/abstracts"> ... </Route> */}
-                {/* <Route path="/events/:eventId/sponsors"> ... </Route> */}
-                {/* <Route path="/badge-designer/:eventId" element={<BadgeDesigner />} /> */}
-                {/* These should now be handled INTERNALLY by EventPortal based on the URL */}
                 
                 {/* Profile and other main layout routes */}
                 <Route path="/profile" element={<Profile />} />
@@ -371,11 +337,7 @@ const App = () => {
                 <Route path="/billing" element={<Billing />} />
                 <Route path="/help" element={<Help />} />
                 <Route path="/timeline" element={<Timeline />} />
-                
               </Route>
-
-              {/* Catch-all 404 Route */}
-              <Route path="*" element={<NotFoundPage />} />
 
               {/* Client Portal Routes */}
               <Route
@@ -386,12 +348,23 @@ const App = () => {
                   </ClientAuthProvider>
                 }
               />
+
+              {/* Payment Routes */}
+              <Route path="/pay/:eventId/:token" element={<PayRedirect />} />
+              <Route path="/payment-success/:eventId/:token" element={<PaymentSuccess />} />
+              <Route path="/payment-cancel/:eventId/:token" element={<PaymentCancel />} />
+
+              {/* Catch-all 404 Route - Must be last */}
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
-          </Suspense>
-          <Toaster position="top-right" />
-        </RegistrantAuthProvider>
+            </Suspense>
+            <Toaster position="top-right" />
+            </ActiveEventProvider>
+          </RegistrantAuthProvider>
+        </NotificationProvider>
       </AuthProvider>
       <ToastContainer position="top-right" autoClose={5000} />
+      </ThemeProvider>
     </Router>
   );
 };

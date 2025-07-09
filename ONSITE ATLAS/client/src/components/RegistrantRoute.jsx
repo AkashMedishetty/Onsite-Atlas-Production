@@ -1,6 +1,6 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useRegistrantAuth } from '../contexts/RegistrantAuthContext.jsx';
+import { useRegistrantAuth } from '../contexts/RegistrantAuthContext';
 
 const RegistrantRoute = ({ children }) => {
   const { isAuthenticated, loading } = useRegistrantAuth();

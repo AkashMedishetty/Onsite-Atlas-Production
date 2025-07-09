@@ -10,7 +10,7 @@ const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const routes = require('./routes');
 const ApiError = require('./utils/ApiError');
-const { errorHandler } = require('./middleware/errorHandler');
+const { errorHandler, errorConverter } = require('./middleware/error');
 const { protect } = require('./middleware/auth.middleware');
 const config = require('./config/config');
 const path = require('path');
@@ -23,6 +23,10 @@ const systemSettingsRoutes = require('./routes/systemSettings.routes');
 const os = require('os');
 const backupRoutes = require('./routes/backup.routes');
 const systemLogsRoutes = require('./routes/systemLogs.routes');
+const registrationRoutes = require('./routes/registration.routes');
+const userRoutes = require('./routes/user.routes');
+const authRoutes = require('./routes/auth.routes');
+const paymentRoutes = require('./routes/payment.routes');
 
 // Initialize express app
 const app = express();
@@ -72,20 +76,14 @@ app.use('/api/registrant-portal/login', authLimiter);
 app.use('/api/registrant-portal/forgot-password', authLimiter);
 app.use('/api/registrant-portal/reset-password', authLimiter);
 
-// Only parse JSON and urlencoded for non-multipart requests
-app.use((req, res, next) => {
-  if (req.is('multipart/form-data')) return next();
-  express.json({ limit: '10mb' })(req, res, next);
-});
-app.use((req, res, next) => {
-  if (req.is('multipart/form-data')) return next();
-  express.urlencoded({ extended: true, limit: '10mb' })(req, res, next);
-});
+// Add File Upload Middleware first to handle multipart/form-data
+app.use(fileUpload());
+
+// Parse JSON and URL-encoded data (fileUpload() already handles multipart)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use(cookieParser());
-
-// Add File Upload Middleware
-app.use(fileUpload());
 
 // Sanitize request data
 app.use(xss());
@@ -125,15 +123,18 @@ try {
 // Add direct routes for resources and categories to handle various client path formats
 const resourceRoutes = require('./routes/resources.routes');
 const categoryRoutes = require('./routes/categories.routes');
-const eventRoutes = require('./routes/event.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const resourceBlockingRoutes = require('./routes/resourceBlocking.routes');
 
-// Mount eventRoutes to handle all /api/events paths
-app.use('/api/events', eventRoutes);
+// Event routes are already mounted via routes/index.js at /api/events
+// Removing duplicate registration to prevent route conflicts
 
 // Direct route registration for key API endpoints that need to be accessible at the root level
 app.use('/api/resources', resourceRoutes);
 app.use('/api/categories', categoryRoutes);
+
+// Add resource blocking routes
+app.use('/api/resource-blocking', resourceBlockingRoutes);
 
 // Add protected direct routes
 app.use('/api/events/:id/dashboard', protect, (req, res, next) => {
@@ -160,6 +161,53 @@ app.use('/api/backup', backupRoutes);
 
 // Add system logs routes
 app.use('/api/system-logs', systemLogsRoutes);
+
+// Certificate download route (public access)
+app.get('/api/certificates/download/:registrationId', async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    
+    const Registration = require('./models/Registration');
+    const registration = await Registration.findOne({ registrationId })
+      .populate('event', 'name')
+      .populate('category', 'name');
+
+    if (!registration) {
+      return res.status(404).json({
+        success: false,
+        message: 'Registration not found'
+      });
+    }
+
+    // Simulate certificate availability
+    if (!registration.certificateIssued) {
+      return res.status(404).json({
+        success: false,
+        message: 'Certificate not available yet. Please check back later.'
+      });
+    }
+
+    // Return mock certificate data (would be actual PDF in production)
+    return res.json({
+      success: true,
+      message: 'Certificate ready for download',
+      data: {
+        registrationId,
+        certificateUrl: `/certificates/${registrationId}.pdf`,
+        participantName: `${registration.personalInfo?.firstName} ${registration.personalInfo?.lastName}`,
+        eventName: registration.event?.name,
+        issuedDate: new Date()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error downloading certificate:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error retrieving certificate'
+    });
+  }
+});
 
 // Health check endpoint with basic system stats
 const healthHandler = (req, res) => {
@@ -196,9 +244,8 @@ app.use((req, res, next) => {
   res.status(404).json({ success: false, message: 'Not Found' });
 });
 
-// Convert errors to ApiError (if you had a complex errorConverter, ensure it's compatible or remove)
-// The errorHandler from utils/ApiError.js is simpler and might not need a separate converter
-// app.use(errorConverter); // Keeping this commented as the new errorHandler is basic
+// Convert errors to standardized format
+app.use(errorConverter);
 
 // Handle errors
 app.use(errorHandler);

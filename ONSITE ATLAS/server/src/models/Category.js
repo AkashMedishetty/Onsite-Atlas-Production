@@ -2,25 +2,31 @@ const mongoose = require('mongoose');
 
 const categorySchema = new mongoose.Schema({
   name: {
-    type: String,
+    type: String, trim: true,
     required: [true, 'Category name is required'],
     trim: true
   },
   description: {
-    type: String,
+    type: String, trim: true,
     trim: true
   },
   event: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'Event',
     required: true
   },
   color: {
-    type: String,
+    type: String, trim: true,
     default: '#3B82F6' // Default blue color
   },
   badgeTemplate: {
-    type: String
+    type: String, trim: true
   },
   permissions: {
     meals: {
@@ -42,8 +48,13 @@ const categorySchema = new mongoose.Schema({
   },
   mealEntitlements: [{
     mealId: {
-      type: mongoose.Schema.Types.ObjectId
-    },
+      type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      }},
     entitled: {
       type: Boolean,
       default: true
@@ -51,8 +62,13 @@ const categorySchema = new mongoose.Schema({
   }],
   kitItemEntitlements: [{
     itemId: {
-      type: mongoose.Schema.Types.ObjectId
-    },
+      type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      }},
     entitled: {
       type: Boolean,
       default: true
@@ -60,8 +76,13 @@ const categorySchema = new mongoose.Schema({
   }],
   certificateEntitlements: [{
     certificateId: {
-      type: mongoose.Schema.Types.ObjectId
-    },
+      type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      }},
     entitled: {
       type: Boolean,
       default: true
@@ -75,6 +96,12 @@ const categorySchema = new mongoose.Schema({
     },
     workshopIds: [{
       type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
       ref: 'Workshop'
     }]
   },
@@ -88,6 +115,12 @@ const categorySchema = new mongoose.Schema({
   },
   additionalDataFields: [{
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'CustomField'
   }],
   portalFeatures: {

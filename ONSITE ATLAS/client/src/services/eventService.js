@@ -5,6 +5,8 @@ import axios from 'axios';
 const formatEventData = (event) => {
   if (!event) return null;
   
+
+  
   // Ensure all required structures exist
   return {
     ...event,
@@ -12,6 +14,8 @@ const formatEventData = (event) => {
     status: event.status || 'Draft',
     startDate: event.startDate || null,
     endDate: event.endDate || null,
+    // Explicitly preserve registration count
+    registrationCount: event.registrationCount || 0,
     registrationSettings: event.registrationSettings || { 
       idPrefix: 'REG', 
       enabled: false,
@@ -92,7 +96,8 @@ const formatEventData = (event) => {
         borderColor: '#CCCCCC'
       }
     },
-    portalUrls: event.portalUrls || {}
+    portalUrls: event.portalUrls || {},
+    pricingRules: event.pricingRules || []
   };
 };
 
@@ -144,6 +149,8 @@ const fetchEvents = async (params = {}) => {
     const response = await axios.get(url);
     const data = await handleApiResponse(response);
     
+
+    
     // Handle different API response formats
     if (data && Array.isArray(data)) {
       return data;
@@ -180,6 +187,21 @@ const fetchEvents = async (params = {}) => {
 
 // Alias for backward compatibility
 const getEvents = fetchEvents;
+
+// Archive event (soft delete)
+const archiveEvent = async (id) => {
+  if (!id) {
+    throw new Error('Event ID is required');
+  }
+  
+  try {
+    const response = await axios.patch(`${baseURL}/events/${id}/archive`);
+    return await handleApiResponse(response);
+  } catch (error) {
+    console.error('Error archiving event:', error);
+    throw error;
+  }
+};
 
 // Fetch a single event by ID
 const getEventById = async (id) => {
@@ -253,104 +275,160 @@ const getEventById = async (id) => {
 };
 
 // Update an existing event
-const updateEvent = async (id, eventData) => {
-  if (!id) {
-    console.error('updateEvent called without an ID');
-    throw new Error('Event ID is required');
-  }
-  
+const updateEvent = async (eventId, eventData) => {
   try {
-    // Extract resource settings if present to update them separately
-    const resourceSettings = eventData.resourceSettings;
-    let updatedEventData = { ...eventData };
+    console.log('[eventService.updateEvent] Original data:', eventData);
     
-    // Clean registrationSettings.customFields for backend compliance
-    if (updatedEventData.registrationSettings && Array.isArray(updatedEventData.registrationSettings.customFields)) {
-      updatedEventData.registrationSettings.customFields = cleanCustomFields(updatedEventData.registrationSettings.customFields);
+    // Create a clean copy of update data
+    const updateData = { ...eventData };
+    
+    // COMPREHENSIVE FRONTEND PROTECTION: Remove empty/undefined settings to prevent overwrites
+    
+    // Protection for Pricing Rules - don't send empty arrays
+    if (!updateData.pricingRules || updateData.pricingRules.length === 0) {
+      console.log('[eventService.updateEvent] Removing empty pricingRules from update');
+      delete updateData.pricingRules;
     }
     
-    // Remove resource settings from the main event update to avoid duplication
-    if (resourceSettings) {
-      delete updatedEventData.resourceSettings;
+    // Protection for Registration Settings - don't send empty objects
+    if (updateData.registrationSettings && Object.keys(updateData.registrationSettings).length === 0) {
+      console.log('[eventService.updateEvent] Removing empty registrationSettings from update');
+      delete updateData.registrationSettings;
     }
     
-    const response = await axios.put(`${baseURL}/events/${id}`, updatedEventData, {
+    // Protection for Abstract Settings - don't send empty objects
+    if (updateData.abstractSettings && Object.keys(updateData.abstractSettings).length === 0) {
+      console.log('[eventService.updateEvent] Removing empty abstractSettings from update');
+      delete updateData.abstractSettings;
+    }
+    
+    // Protection for Email Settings - don't send empty objects
+    if (updateData.emailSettings && Object.keys(updateData.emailSettings).length === 0) {
+      console.log('[eventService.updateEvent] Removing empty emailSettings from update');
+      delete updateData.emailSettings;
+    }
+    
+    // Protection for Badge Settings - don't send empty objects
+    if (updateData.badgeSettings && Object.keys(updateData.badgeSettings).length === 0) {
+      console.log('[eventService.updateEvent] Removing empty badgeSettings from update');
+      delete updateData.badgeSettings;
+    }
+    
+    // Protection for Resource Settings - don't send empty objects
+    if (updateData.resourceSettings && Object.keys(updateData.resourceSettings).length === 0) {
+      console.log('[eventService.updateEvent] Removing empty resourceSettings from update');
+      delete updateData.resourceSettings;
+    }
+    
+    // Protection for Payment Settings - don't send empty objects
+    if (updateData.paymentSettings && Object.keys(updateData.paymentSettings).length === 0) {
+      console.log('[eventService.updateEvent] Removing empty paymentSettings from update');
+      delete updateData.paymentSettings;
+    }
+    
+    // Protection for Categories - don't send empty arrays
+    if (!updateData.categories || updateData.categories.length === 0) {
+      console.log('[eventService.updateEvent] Removing empty categories from update');
+      delete updateData.categories;
+    }
+    
+    // Protection for Workshops - don't send empty arrays
+    if (!updateData.workshops || updateData.workshops.length === 0) {
+      console.log('[eventService.updateEvent] Removing empty workshops from update');
+      delete updateData.workshops;
+    }
+    
+    // Protection for Schedule - don't send empty objects
+    if (updateData.schedule && Object.keys(updateData.schedule).length === 0) {
+      console.log('[eventService.updateEvent] Removing empty schedule from update');
+      delete updateData.schedule;
+    }
+    
+    // Remove fields that shouldn't be updated via general update
+    delete updateData.createdBy;
+    delete updateData.createdAt;
+    delete updateData.__v;
+    delete updateData._id;
+    
+    console.log('[eventService.updateEvent] Cleaned update data:', updateData);
+    
+    const response = await axios.put(`${baseURL}/events/${eventId}`, updateData, {
       headers: {
         'Content-Type': 'application/json',
       },
     });
-    
-    const data = await handleApiResponse(response);
-    
-    // If resource settings are provided, update them separately
-    if (resourceSettings) {
-      try {
-        if (resourceSettings.food) {
-          await axios.put(`${baseURL}/resources/settings`, 
-            { 
-              settings: resourceSettings.food,
-              isEnabled: resourceSettings.food.enabled !== false
-            }, 
-            { 
-              params: { eventId: id, type: 'food' } 
-            }
-          );
-        }
-        
-        if (resourceSettings.kits) {
-          await axios.put(`${baseURL}/resources/settings`, 
-            { 
-              settings: resourceSettings.kits,
-              isEnabled: resourceSettings.kits.enabled !== false
-            }, 
-            { 
-              params: { eventId: id, type: 'kit' } 
-            }
-          );
-        }
-        
-        if (resourceSettings.certificates) {
-          await axios.put(`${baseURL}/resources/settings`, 
-            { 
-              settings: resourceSettings.certificates,
-              isEnabled: resourceSettings.certificates.enabled !== false
-            }, 
-            { 
-              params: { eventId: id, type: 'certificate' } 
-            }
-          );
-        }
-      } catch (resourceError) {
-        console.error('Error updating resource settings:', resourceError);
-        // Continue with the event update even if resource settings update fails
-      }
-    }
-    
-    return formatEventData(data.event);
+    return response.data;
   } catch (error) {
-    console.error(`Error updating event ${id}:`, error);
-    return { 
-      success: false, 
-      message: error.response?.data?.message || 'Failed to update event'
-    };
+    console.error('[eventService.updateEvent] Error updating event:', error);
+    throw error;
   }
 };
 
-// Delete an event
-const deleteEvent = async (id) => {
+// Delete an event (schedules with PurpleHat Advanced Security Protocol)
+const deleteEvent = async (id, options = {}) => {
   if (!id) {
     console.error('deleteEvent called without an ID');
     throw new Error('Event ID is required');
   }
   
   try {
-    await axios.delete(`${baseURL}/events/${id}`);
-    return { success: true };
+    const response = await axios.delete(`${baseURL}/events/${id}`, { data: options });
+    return handleApiResponse(response);
   } catch (error) {
     console.error(`Error deleting event ${id}:`, error);
     return { 
       success: false, 
-      message: error.response?.data?.message || 'Failed to delete event'
+      message: error.response?.data?.message || 'Failed to schedule event deletion'
+    };
+  }
+};
+
+// Cancel scheduled event deletion
+const cancelEventDeletion = async (id, reason = 'Cancelled by user') => {
+  if (!id) {
+    console.error('cancelEventDeletion called without an ID');
+    throw new Error('Event ID is required');
+  }
+  
+  try {
+    const response = await axios.post(`${baseURL}/events/${id}/cancel-deletion`, { reason });
+    return handleApiResponse(response);
+  } catch (error) {
+    console.error(`Error cancelling event deletion ${id}:`, error);
+    return { 
+      success: false, 
+      message: error.response?.data?.message || 'Failed to cancel event deletion'
+    };
+  }
+};
+
+// Get event deletion status
+const getEventDeletionStatus = async (id) => {
+  if (!id) {
+    console.error('getEventDeletionStatus called without an ID');
+    throw new Error('Event ID is required');
+  }
+  
+  try {
+    const response = await axios.get(`${baseURL}/events/${id}/deletion-status`);
+    return handleApiResponse(response);
+  } catch (error) {
+    // Handle 404 as "no deletion scheduled" instead of error
+    if (error.response?.status === 404) {
+      return {
+        success: true,
+        data: {
+          hasScheduledDeletion: false,
+          status: 'active'
+        },
+        message: 'No deletion scheduled'
+      };
+    }
+    
+    console.error(`Error getting deletion status for event ${id}:`, error);
+    return { 
+      success: false, 
+      message: error.response?.data?.message || 'Failed to get deletion status'
     };
   }
 };
@@ -930,6 +1008,133 @@ const getSponsorPortalCategories = async () => {
   }
 };
 
+// Specific update functions for individual settings tabs
+const updateEventGeneralSettings = async (eventId, generalData) => {
+  try {
+    console.log('[eventService.updateEventGeneralSettings] Updating only general settings');
+    const response = await axios.put(`${baseURL}/events/${eventId}`, {
+      name: generalData.name,
+      description: generalData.description,
+      startDate: generalData.startDate,
+      endDate: generalData.endDate,
+      location: generalData.location,
+      timezone: generalData.timezone,
+      status: generalData.status,
+      maxAttendees: generalData.maxAttendees,
+      venue: generalData.venue,
+      registrationSettings: generalData.registrationSettings // Only if specifically updating
+    });
+    return response.data;
+  } catch (error) {
+    console.error('[eventService.updateEventGeneralSettings] Error:', error);
+    throw error;
+  }
+};
+
+const updateEventRegistrationSettings = async (eventId, registrationSettings) => {
+  try {
+    console.log('[eventService.updateEventRegistrationSettings] Updating only registration settings');
+    const response = await axios.put(`${baseURL}/events/${eventId}`, {
+      registrationSettings
+    });
+    return response.data;
+  } catch (error) {
+    console.error('[eventService.updateEventRegistrationSettings] Error:', error);
+    throw error;
+  }
+};
+
+const updateEventAbstractSettings = async (eventId, abstractSettings) => {
+  try {
+    console.log('[eventService.updateEventAbstractSettings] Updating only abstract settings');
+    const response = await axios.put(`${baseURL}/events/${eventId}`, {
+      abstractSettings
+    });
+    return response.data;
+  } catch (error) {
+    console.error('[eventService.updateEventAbstractSettings] Error:', error);
+    throw error;
+  }
+};
+
+const updateEventEmailSettings = async (eventId, emailSettings) => {
+  try {
+    console.log('[eventService.updateEventEmailSettings] Updating only email settings');
+    const response = await axios.put(`${baseURL}/events/${eventId}`, {
+      emailSettings
+    });
+    return response.data;
+  } catch (error) {
+    console.error('[eventService.updateEventEmailSettings] Error:', error);
+    throw error;
+  }
+};
+
+const updateEventBadgeSettings = async (eventId, badgeSettings) => {
+  try {
+    console.log('[eventService.updateEventBadgeSettings] Updating only badge settings');
+    const response = await axios.put(`${baseURL}/events/${eventId}`, {
+      badgeSettings
+    });
+    return response.data;
+  } catch (error) {
+    console.error('[eventService.updateEventBadgeSettings] Error:', error);
+    throw error;
+  }
+};
+
+const updateEventResourceSettings = async (eventId, resourceSettings) => {
+  try {
+    console.log('[eventService.updateEventResourceSettings] Updating only resource settings');
+    const response = await axios.put(`${baseURL}/events/${eventId}`, {
+      resourceSettings
+    });
+    return response.data;
+  } catch (error) {
+    console.error('[eventService.updateEventResourceSettings] Error:', error);
+    throw error;
+  }
+};
+
+const updateEventPaymentSettings = async (eventId, paymentSettings) => {
+  try {
+    console.log('[eventService.updateEventPaymentSettings] Updating only payment settings');
+    const response = await axios.put(`${baseURL}/events/${eventId}`, {
+      paymentSettings
+    });
+    return response.data;
+  } catch (error) {
+    console.error('[eventService.updateEventPaymentSettings] Error:', error);
+    throw error;
+  }
+};
+
+const updateEventCategories = async (eventId, categories) => {
+  try {
+    console.log('[eventService.updateEventCategories] Updating only categories');
+    const response = await axios.put(`${baseURL}/events/${eventId}`, {
+      categories
+    });
+    return response.data;
+  } catch (error) {
+    console.error('[eventService.updateEventCategories] Error:', error);
+    throw error;
+  }
+};
+
+const updateEventWorkshops = async (eventId, workshops) => {
+  try {
+    console.log('[eventService.updateEventWorkshops] Updating only workshops');
+    const response = await axios.put(`${baseURL}/events/${eventId}`, {
+      workshops
+    });
+    return response.data;
+  } catch (error) {
+    console.error('[eventService.updateEventWorkshops] Error:', error);
+    throw error;
+  }
+};
+
 const eventService = {
   createEvent,
   fetchEvents,
@@ -937,6 +1142,9 @@ const eventService = {
   getEventById,
   updateEvent,
   deleteEvent,
+  cancelEventDeletion,
+  getEventDeletionStatus,
+  archiveEvent,
   getEventStatistics,
   getEventDashboard,
   getEventCategories,
@@ -950,7 +1158,17 @@ const eventService = {
   getEventReviewers,
   getEventCategoriesPublic,
   getEventSponsors,
-  getSponsorPortalCategories
+  getSponsorPortalCategories,
+  // New specific update functions
+  updateEventGeneralSettings,
+  updateEventRegistrationSettings,
+  updateEventAbstractSettings,
+  updateEventEmailSettings,
+  updateEventBadgeSettings,
+  updateEventResourceSettings,
+  updateEventPaymentSettings,
+  updateEventCategories,
+  updateEventWorkshops
 };
 
 export default eventService; 

@@ -7,6 +7,7 @@ const archiver = require('archiver');
 const mongoose = require('mongoose');
 const { generateAbstractsExcel } = require('../utils/excelHelper');
 const { UPLOADS_BASE_DIR } = require('../config/paths');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 /**
  * Get all users
@@ -353,7 +354,7 @@ const downloadReviewerAbstractFiles = async (req, res, next) => {
       res.setHeader('Content-Disposition', `attachment; filename="${zipFileName}"`);
       res.status(200).download(zipFilePath, zipFileName, (err) => {
         if (err) {
-          logger.error('Error sending ZIP file to client:', err);
+          logger.error('Error sending ZIP file to client:', error);
           // Cannot send another response if headers were already sent by res.download
         }
         // Clean up the temp file
@@ -367,12 +368,12 @@ const downloadReviewerAbstractFiles = async (req, res, next) => {
       if (err.code === 'ENOENT') {
         logger.warn('Archiver warning (file not found during zipping):', err);
       } else {
-        logger.error('Archiver warning:', err);
+        logger.error('Archiver warning:', error);
       }
     });
 
     archive.on('error', (err) => {
-      logger.error('Archiver critical error:', err);
+      logger.error('Archiver critical error:', error);
       fs.unlink(zipFilePath, () => {}); // Attempt to delete partial zip
       if (!headersSent) {
         headersSent = true;

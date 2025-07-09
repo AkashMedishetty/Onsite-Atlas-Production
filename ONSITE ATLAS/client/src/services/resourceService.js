@@ -1460,6 +1460,159 @@ const resourceService = {
         data: []
       };
     }
+  },
+
+  // Resource Blocking Functions
+  
+  /**
+   * Get resource blocks for a registration
+   * @param {string} eventId - Event ID
+   * @param {string} registrationId - Registration ID
+   * @returns {Promise} - API response with resource blocks
+   */
+  getResourceBlocks: async (eventId, registrationId) => {
+    try {
+      const response = await api.get(`/events/${eventId}/registrations/${registrationId}/resource-blocks`);
+      return response.data;
+    } catch (error) {
+      handleError(error, 'Error fetching resource blocks');
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to fetch resource blocks',
+        data: { resourceBlocks: { blockedResources: [], history: [] }, activeBlocks: [] }
+      };
+    }
+  },
+
+  /**
+   * Block a resource for a registration
+   * @param {string} eventId - Event ID
+   * @param {string} registrationId - Registration ID
+   * @param {Object} blockData - Block data
+   * @returns {Promise} - API response
+   */
+  blockResource: async (eventId, registrationId, blockData) => {
+    try {
+      const response = await api.post(`/events/${eventId}/registrations/${registrationId}/resource-blocks`, blockData);
+      return response.data;
+    } catch (error) {
+      handleError(error, 'Error blocking resource');
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to block resource'
+      };
+    }
+  },
+
+  /**
+   * Remove a resource block
+   * @param {string} eventId - Event ID
+   * @param {string} registrationId - Registration ID
+   * @param {string} resourceId - Resource ID
+   * @param {string} reason - Reason for removing block
+   * @returns {Promise} - API response
+   */
+  removeResourceBlock: async (eventId, registrationId, resourceId, reason) => {
+    try {
+      const response = await api.delete(`/events/${eventId}/registrations/${registrationId}/resource-blocks/${resourceId}`, {
+        data: { reason }
+      });
+      return response.data;
+    } catch (error) {
+      handleError(error, 'Error removing resource block');
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to remove resource block'
+      };
+    }
+  },
+
+  /**
+   * Check if a resource is blocked for a registration
+   * @param {string} eventId - Event ID
+   * @param {string} registrationId - Registration ID
+   * @param {string} resourceId - Resource ID
+   * @returns {Promise} - API response with block status
+   */
+  checkResourceBlock: async (eventId, registrationId, resourceId) => {
+    try {
+      const response = await api.get(`/events/${eventId}/registrations/${registrationId}/resource-blocks/${resourceId}/check`);
+      return response.data;
+    } catch (error) {
+      handleError(error, 'Error checking resource block');
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to check resource block',
+        data: { isBlocked: false, blockDetails: null }
+      };
+    }
+  },
+
+  /**
+   * Get all available resources for an event (for blocking)
+   * @param {string} eventId - Event ID
+   * @returns {Promise} - API response with available resources
+   */
+  getAvailableResourcesForBlocking: async (eventId) => {
+    try {
+      // Get all resources for the event
+      const [foodRes, kitRes, certRes] = await Promise.all([
+        api.get('/resources', { params: { eventId, type: 'food' } }),
+        api.get('/resources', { params: { eventId, type: 'kit' } }),
+        api.get('/resources', { params: { eventId, type: 'certificate' } })
+      ]);
+
+      const resources = [];
+      
+      // Process food resources
+      if (foodRes.data?.success && foodRes.data?.data) {
+        foodRes.data.data.forEach(resource => {
+          resources.push({
+            _id: resource._id,
+            name: resource.name,
+            type: 'food',
+            description: resource.description || 'Food item'
+          });
+        });
+      }
+
+      // Process kit resources  
+      if (kitRes.data?.success && kitRes.data?.data) {
+        kitRes.data.data.forEach(resource => {
+          resources.push({
+            _id: resource._id,
+            name: resource.name,
+            type: 'kit',
+            description: resource.description || 'Kit bag item'
+          });
+        });
+      }
+
+      // Process certificate resources
+      if (certRes.data?.success && certRes.data?.data) {
+        certRes.data.data.forEach(resource => {
+          resources.push({
+            _id: resource._id,
+            name: resource.name,
+            type: 'certificate',
+            description: resource.description || 'Certificate'
+          });
+        });
+      }
+
+      return {
+        success: true,
+        message: 'Available resources retrieved successfully',
+        data: resources
+      };
+    } catch (error) {
+      handleError(error, 'Error fetching available resources');
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to fetch available resources',
+        data: []
+      };
+    }
   }
 };
 

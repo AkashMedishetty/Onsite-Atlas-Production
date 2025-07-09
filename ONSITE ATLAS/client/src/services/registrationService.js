@@ -846,12 +846,28 @@ const registrationService = {
   // Create a registration (public, no auth)
   createRegistrationPublic: async (eventId, registrationData) => {
     try {
-      const response = await axios.post(`${API_URL}/events/${eventId}/public-registrations`, registrationData);
+      const response = await api.post(`/public/events/${eventId}/registrations`, registrationData);
       return response.data;
     } catch (error) {
-      console.error('API Error (public registration):', error.response?.data || error.message);
-      return error.response?.data || { success: false, message: error.message };
+      console.error('Error creating public registration:', error);
+      return {
+        success: false,
+        message: error.message || 'Failed to submit registration'
+      };
     }
+  },
+
+  /**
+   * Get price quote before payment
+   */
+  getQuote: async (eventId, data) => {
+    const response = await api.post(`/events/${eventId}/registrations/quote`, data);
+    return response.data;
+  },
+
+  quoteRegistration: async (eventId, data) => {
+    const res = await api.post(`/events/${eventId}/registrations/quote`, data);
+    return res.data;
   },
 };
 

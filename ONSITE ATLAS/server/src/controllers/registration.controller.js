@@ -5,6 +5,7 @@ const Category = require('../models/Category');
 const { createApiError } = require('../middleware/error');
 const asyncHandler = require('../middleware/async');
 const Resource = require('../models/Resource');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 const sendEmail = require('../utils/sendEmail');
 const crypto = require('crypto');
 const { sendPaginated } = require('../utils/pagination');
@@ -15,6 +16,8 @@ const ImportJob = require('../models/ImportJob');
 const { processBulkImportJob } = require('../services/registrationImportService');
 const logger = require('../config/logger');
 const jwt = require('jsonwebtoken');
+const emailService = require('../services/emailService');
+const AdminNotificationService = require('../services/adminNotificationService');
 
 // @desc    Get all registrations
 // @route   GET /api/registrations
@@ -24,7 +27,7 @@ const getRegistrations = asyncHandler(async (req, res) => {
   // Extract query parameters
   const { categoryId, status, search, page = 1, limit = 10 } = req.query;
   
-  const eventId = req.params.id || req.query.eventId;
+  const eventId = req && req.params && req.params.id || req && req.query && req.query.eventId;
   
   console.log('Getting registrations with eventId:', eventId);
   
@@ -37,7 +40,7 @@ const getRegistrations = asyncHandler(async (req, res) => {
     filter.event = eventId;
     console.log('Filtering registrations by event:', eventId);
   } else {
-    console.warn(`[getRegistrations] Access attempt without eventId. User: ${req.user.id || 'UNKNOWN'}`);
+    console.warn(`[getRegistrations] Access attempt without eventId. User: ${req && req.user && req.user.id || 'UNKNOWN'}`);
     return sendPaginated(res, {
         message: 'Event ID is required to list registrations.',
         data: [],
@@ -48,17 +51,17 @@ const getRegistrations = asyncHandler(async (req, res) => {
   }
   
   // Support both 'category' and 'categoryId' as query params
-  const categoryFilter = req.query.categoryId || req.query.category;
+  const categoryFilter = req && req.query && req.query.categoryId || req && req.query && req.query.category;
   if (categoryFilter) filter.category = categoryFilter;
   
   if (status) filter.status = status;
   
   // Add support for badgePrinted and registrationType filters
-  if (req.query.badgePrinted !== undefined && req.query.badgePrinted !== '') {
-    filter.badgePrinted = req.query.badgePrinted === 'true';
+  if (req && req.query && req.query.badgePrinted !== undefined && req && req.query && req.query.badgePrinted !== '') {
+    filter.badgePrinted = req && req.query && req.query.badgePrinted === 'true';
   }
-  if (req.query.registrationType) {
-    filter.registrationType = req.query.registrationType;
+  if (req && req.query && req.query.registrationType) {
+    filter.registrationType = req && req.query && req.query.registrationType;
   }
   
   if (search) {
@@ -92,11 +95,12 @@ const getRegistrations = asyncHandler(async (req, res) => {
     .populate('event', 'name startDate endDate logo')
     .populate('category', 'name color')
     .populate('printedBy', 'name email')
+    .populate('sponsoredBy', 'companyName name contactPerson email phone sponsorshipLevel')
     .skip(skip)
     .limit(nLimit)
     .sort({ createdAt: -1 });
   
-  console.log(`Found ${registrations.length} registrations`);
+  console.log(`Found ${registrations && registrations.length} registrations`);
   
   const total = await Registration.countDocuments(filter);
   console.log(`Pagination values: total=${total}, page=${nPage}, limit=${nLimit}`);
@@ -114,15 +118,12 @@ const getRegistrations = asyncHandler(async (req, res) => {
     };
     
     // Use a specific secret for registrants if available, otherwise fallback to general JWT_SECRET
-    const secret = process.env.REGISTRANT_JWT_SECRET || process.env.JWT_SECRET;
-    const expiresIn = process.env.REGISTRANT_JWT_EXPIRES_IN || process.env.JWT_EXPIRES_IN || '1d';
+    const secret = process && process.env && process.env.REGISTRANT_JWT_SECRET || process && process.env && process.env.JWT_SECRET;
+    const expiresIn = process && process.env && process.env.REGISTRANT_JWT_EXPIRES_IN || process && process.env && process.env.JWT_EXPIRES_IN || '1d';
 
     if (!secret) {
       console.error('[getRegistrations] JWT_SECRET or REGISTRANT_JWT_SECRET not configured for registrant login.');
-      return res.status(500).json({
-          success: false,
-          message: 'Server configuration error: JWT secret not set.'
-      });
+      return StandardErrorHandler.sendError(res, 500, 'Server configuration error: JWT secret not set.');
     }
 
     const token = jwt.sign(payload, secret, { expiresIn });
@@ -151,7 +152,7 @@ const getRegistrations = asyncHandler(async (req, res) => {
 // @access  Private
 const getRegistrationsCount = asyncHandler(async (req, res) => {
   // Get eventId from route parameters
-  const eventId = req.params.eventId;
+  const eventId = req && req.params && req.params.eventId;
   
   console.log('Getting registration count for event:', eventId);
   
@@ -180,7 +181,7 @@ const getRegistrationsCount = asyncHandler(async (req, res) => {
     const categoryCountMap = {};
     for (const item of categoryCounts) {
       if (item._id) {
-        categoryCountMap[item._id.toString()] = item.count;
+        categoryCountMap[item && item._id && item._id.toString()] = item.count;
       }
     }
     
@@ -212,10 +213,10 @@ const getRegistrationsCount = asyncHandler(async (req, res) => {
 // @route   GET /api/events/:id/registrations/:registrationId  <-- Nested Route
 // @access  Private
 const getRegistrationById = asyncHandler(async (req, res) => {
-  const registrationId = req.params.registrationId;
-  const eventId = req.params.id; // Event ID from parent route if nested
+  const registrationId = req && req.params && req.params.registrationId;
+  const eventId = req && req.params && req.params.id; // Event ID from parent route if nested
 
-  if (!mongoose.Types.ObjectId.isValid(registrationId)) {
+  if (!mongoose && mongoose.Types && mongoose.Types.ObjectId.isValid(registrationId)) {
      return sendSuccess(res, 400, 'Invalid Registration ID format');
   }
 
@@ -224,16 +225,17 @@ const getRegistrationById = asyncHandler(async (req, res) => {
   
   // If eventId is present (nested route), enforce it
   if (eventId) {
-    if (!mongoose.Types.ObjectId.isValid(eventId)) {
+    if (!mongoose && mongoose.Types && mongoose.Types.ObjectId.isValid(eventId)) {
       return sendSuccess(res, 400, 'Invalid Event ID format');
     }
     query.event = eventId; 
     console.log(`[getRegistrationById] Scoping query to event ${eventId}`);
   }
 
-  const registration = await Registration.findOne(query)
-    .populate('event', 'name startDate endDate logo')
-    .populate('category', 'name color permissions');
+  const registration = await Registration.findOne(query);
+  if (!registration) {
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+  }
   
   if (!registration) {
     // Make error message more specific
@@ -255,8 +257,11 @@ const getRegistrationById = asyncHandler(async (req, res) => {
 // @access  Private
 const createRegistration = asyncHandler(async (req, res) => {
   // Get eventId from params if route is nested, otherwise from body
-  const eventId = req.params.eventId || req.body.eventId; 
-  const { categoryId, personalInfo } = req.body;
+  const eventId = req && req.params && req.params.eventId || req && req.body && req.body.eventId && req && req.body && req.body.eventId; 
+  const { categoryId, personalInfo, seatHoldIds = [], amountCents = 0, currency = 'INR'  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
   
   // Validate required fields
   if (!eventId || !categoryId || !personalInfo) {
@@ -273,6 +278,18 @@ const createRegistration = asyncHandler(async (req, res) => {
   const category = await Category.findById(categoryId);
   if (!category) {
     return sendSuccess(res, 404, 'Category not found');
+  }
+  
+  // Validate accompanying persons' custom fields
+  const accompanyingPersonFields = event.registrationSettings?.accompanyingPersonFields || [];
+  const requiredAccompanyingFields = accompanyingPersonFields.filter(f => f.isRequired).map(f => f.name);
+  const accompanyingPersons = req && req.body && req.body.accompanyingPerson && req && req.body && req.body.accompanyingPersons || [];
+  for (const [idx, person] of accompanyingPersons.entries()) {
+    for (const fieldName of requiredAccompanyingFields) {
+      if (!person.customFields || person.customFields[fieldName] === undefined || person.customFields[fieldName] === "") {
+        return sendSuccess(res, 400, `Accompanying person #${idx + 1} is missing required field: ${fieldName}`);
+      }
+    }
   }
   
   // --- Use Counter Pattern for ID Generation --- 
@@ -305,8 +322,8 @@ const createRegistration = asyncHandler(async (req, res) => {
   if (new Date() > new Date(event.startDate)) {
     registrationType = 'onsite';
   }
-  if (req.body.registrationType) {
-    registrationType = req.body.registrationType;
+  if (req && req.body && req.body.registrationType && req && req.body && req.body.registrationType) {
+    registrationType = req && req.body && req.body.registrationType && req && req.body && req.body.registrationType;
   }
 
   // Create new registration
@@ -316,25 +333,47 @@ const createRegistration = asyncHandler(async (req, res) => {
     category: categoryId,
     personalInfo,
     // PATCH: Save professionalInfo if provided
-    ...(req.body.professionalInfo && { professionalInfo: req.body.professionalInfo }),
+    ...(req && req.body && req.body.professionalInf && req && req.body && req.body.professionalInfo && { professionalInfo: req && req.body && req.body.professionalInfo && req && req.body && req.body.professionalInfo }),
     // PATCH: Save customFields if provided
-    ...(req.body.customFields && { customFields: req.body.customFields }),
+    ...(req && req.body && req.body.customField && req && req.body && req.body.customFields && { customFields: req && req.body && req.body.customFields && req && req.body && req.body.customFields }),
     registrationType,
     status: 'active', // Ensure status is valid based on schema enum
+    amountCents,
+    currency,
+    seatHolds: seatHoldIds,
+    paymentStatus: amountCents > 0 ? 'pending' : 'paid',
     createdAt: new Date(),
     updatedAt: new Date()
   });
+  
+  // Associate seat holds with this registration (if provided)
+  if (Array.isArray(seatHoldIds) && seatHoldIds && seatHoldIds.length) {
+    try {
+      const SeatHold = require('../models/SeatHold');
+      // Only update holds that match the event, are unassigned and not expired
+      const now = new Date();
+      await SeatHold.updateMany(
+        { _id: { $in: seatHoldIds }, event: eventId, registration: { $exists: false }, expiresAt: { $gte: now } },
+        { registration: registration._id }
+      );
+    } catch (error) {
+      console.error('Failed to associate seat holds:', error);
+    }
+  }
   
   // Return created registration with populated references
   const populatedRegistration = await Registration.findById(registration._id)
     .populate('event', 'name startDate endDate logo')
     .populate('category', 'name color permissions');
   
+  if (!populatedRegistration) {
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+  }
+  
   // Send registration confirmation email if enabled
   if (event.emailSettings?.enabled && 
       event.emailSettings?.automaticEmails?.registrationConfirmation) {
     try {
-      const emailService = require('../services/emailService'); // Consider importing at top level
       await emailService.sendRegistrationConfirmationEmail(registration._id);
     } catch (error) {
       console.error('Failed to send registration confirmation email:', error);
@@ -350,22 +389,25 @@ const createRegistration = asyncHandler(async (req, res) => {
 // @route   PUT /api/events/:id/registrations/:registrationId <-- Nested Route
 // @access  Private
 const updateRegistration = asyncHandler(async (req, res, next) => {
-  const registrationId = req.params.registrationId;
-  const eventId = req.params.id; // Event ID from parent route if nested
+  const registrationId = req && req.params && req.params.registrationId;
+  const eventId = req && req.params && req.params.id; // Event ID from parent route if nested
   
   // Log the entire request body, especially personalInfo, upon arrival
   console.log(`[Backend Update Start] Received PUT request for Registration ID: ${registrationId}, Event ID: ${eventId}`);
   console.log(`[Backend Update Start] Request Body:`, req.body);
-  console.log(`[Backend Update Start] req.body.personalInfo:`, req.body.personalInfo);
+  console.log(`[Backend Update Start] req && req.body && req.body.personalInfo && req && req.body && req.body.personalInfo:`, req && req.body && req.body.personalInfo && req && req.body && req.body.personalInfo);
 
-  const { categoryId, personalInfo, status } = req.body;
+  const { categoryId, personalInfo, status  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
   
   // Validate IDs
-  if (!mongoose.Types.ObjectId.isValid(registrationId)) {
+  if (!mongoose && mongoose.Types && mongoose.Types.ObjectId.isValid(registrationId)) {
      return sendSuccess(res, 400, 'Invalid Registration ID format');
   }
   // If eventId is present (nested route), validate it
-  if (eventId && !mongoose.Types.ObjectId.isValid(eventId)) {
+  if (eventId && !mongoose && mongoose.Types && mongoose.Types.ObjectId.isValid(eventId)) {
      return sendSuccess(res, 400, 'Invalid Event ID format');
   }
   
@@ -378,8 +420,8 @@ const updateRegistration = asyncHandler(async (req, res, next) => {
   }
   
   // Secondary check: If accessed via nested route, does it belong to the correct event?
-  if (eventId && registration.event.toString() !== eventId) {
-      console.warn(`[AUTH/SCOPE ERROR] Attempted to update registration ${registrationId} via event ${eventId}, but it belongs to event ${registration.event.toString()}`);
+  if (eventId && registration && registration.event && registration.event.toString() !== eventId) {
+      console.warn(`[AUTH/SCOPE ERROR] Attempted to update registration ${registrationId} via event ${eventId}, but it belongs to event ${registration && registration.event && registration.event.toString()}`);
       // Return 404 to avoid revealing the registration exists elsewhere
       return sendSuccess(res, 404, `Registration not found within event ${eventId}`); 
   }
@@ -400,17 +442,17 @@ const updateRegistration = asyncHandler(async (req, res, next) => {
   }
 
   // PATCH: Save professionalInfo if provided
-  if (req.body.professionalInfo) {
-    registration.professionalInfo = req.body.professionalInfo;
+  if (req && req.body && req.body.professionalInfo && req && req.body && req.body.professionalInfo) {
+    registration.professionalInfo = req && req.body && req.body.professionalInfo && req && req.body && req.body.professionalInfo;
     registration.markModified('professionalInfo');
-    console.log('[Backend Update] Updated professionalInfo:', req.body.professionalInfo);
+    console.log('[Backend Update] Updated professionalInfo:', req && req.body && req.body.professionalInfo && req && req.body && req.body.professionalInfo);
   }
 
   // PATCH: Save customFields if provided (Map)
-  if (req.body.customFields) {
-    registration.customFields = req.body.customFields;
+  if (req && req.body && req.body.customFields && req && req.body && req.body.customFields) {
+    registration.customFields = req && req.body && req.body.customFields && req && req.body && req.body.customFields;
     registration.markModified('customFields');
-    console.log('[Backend Update] Updated customFields:', req.body.customFields);
+    console.log('[Backend Update] Updated customFields:', req && req.body && req.body.customFields && req && req.body && req.body.customFields);
   }
 
   if (status) registration.status = status;
@@ -427,6 +469,10 @@ const updateRegistration = asyncHandler(async (req, res, next) => {
     .populate('event', 'name startDate endDate logo')
     .populate('category', 'name color permissions');
   
+  if (!updatedRegistration) {
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+  }
+  
   console.log('[Final Send] Sending updated data:', updatedRegistration);
 
   return sendSuccess(res, 200, 'Registration updated successfully', updatedRegistration);
@@ -437,15 +483,15 @@ const updateRegistration = asyncHandler(async (req, res, next) => {
 // @route   DELETE /api/events/:id/registrations/:registrationId <-- Nested Route
 // @access  Private (Admin only)
 const deleteRegistration = asyncHandler(async (req, res, next) => {
-  const registrationId = req.params.registrationId;
-  const eventId = req.params.id; // Event ID from parent route if nested
+  const registrationId = req && req.params && req.params.registrationId;
+  const eventId = req && req.params && req.params.id; // Event ID from parent route if nested
 
   // Validate IDs
-  if (!mongoose.Types.ObjectId.isValid(registrationId)) {
+  if (!mongoose && mongoose.Types && mongoose.Types.ObjectId.isValid(registrationId)) {
      return sendSuccess(res, 400, 'Invalid Registration ID format');
   }
   // If eventId is present (nested route), validate it
-  if (eventId && !mongoose.Types.ObjectId.isValid(eventId)) {
+  if (eventId && !mongoose && mongoose.Types && mongoose.Types.ObjectId.isValid(eventId)) {
      return sendSuccess(res, 400, 'Invalid Event ID format');
   }
 
@@ -491,10 +537,10 @@ const deleteRegistration = asyncHandler(async (req, res, next) => {
 // @route   PATCH /api/events/:id/registrations/:registrationId/check-in <-- Nested Route?
 // @access  Private
 const checkInRegistration = asyncHandler(async (req, res) => {
-  const registrationId = req.params.registrationId;
-  const eventId = req.params.id; // Event ID from parent route if nested
+  const registrationId = req && req.params && req.params.registrationId;
+  const eventId = req && req.params && req.params.id; // Event ID from parent route if nested
 
-  if (!mongoose.Types.ObjectId.isValid(registrationId)) {
+  if (!mongoose && mongoose.Types && mongoose.Types.ObjectId.isValid(registrationId)) {
      return sendSuccess(res, 400, 'Invalid Registration ID format');
   }
   // Find registration by ID
@@ -506,11 +552,11 @@ const checkInRegistration = asyncHandler(async (req, res) => {
 
   // If accessed via nested route, verify event match
   if (eventId) {
-    if (!mongoose.Types.ObjectId.isValid(eventId)) {
+    if (!mongoose && mongoose.Types && mongoose.Types.ObjectId.isValid(eventId)) {
        return sendSuccess(res, 400, 'Invalid Event ID format');
     }
-    if (registration.event.toString() !== eventId) {
-      console.warn(`[AUTH/SCOPE ERROR] Attempted to check-in registration ${registrationId} via event ${eventId}, but it belongs to event ${registration.event.toString()}`);
+    if (registration && registration.event && registration.event.toString() !== eventId) {
+      console.warn(`[AUTH/SCOPE ERROR] Attempted to check-in registration ${registrationId} via event ${eventId}, but it belongs to event ${registration && registration.event && registration.event.toString()}`);
       return sendSuccess(res, 404, `Registration not found within event ${eventId}`); 
   }
   }
@@ -560,9 +606,12 @@ const importRegistrations = asyncHandler(async (req, res, next) => {
   logger.info('[ImportRegController] Received bulk import request. Raw req.params: ' + JSON.stringify(req.params, null, 2));
   
   const { id: eventId } = req.params;
-  const { registrations: incomingRegistrations, originalFileName } = req.body;
+  const { registrations: incomingRegistrations, originalFileName  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
 
-  if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
+  if (!eventId || !mongoose && mongoose.Types && mongoose.Types.ObjectId.isValid(eventId)) {
     logger.warn(`[ImportRegController] Invalid or missing eventId after extraction: ${eventId}`);
     return sendSuccess(res, 400, 'Valid Event ID is required.');
   }
@@ -572,11 +621,11 @@ const importRegistrations = asyncHandler(async (req, res, next) => {
     return sendSuccess(res, 400, 'No registration data provided or data is not an array.');
   }
 
-  if (!req.user || !req.user._id) {
+  if (!req.user || !req && req.user && req.user._id) {
     logger.error('[ImportRegController] User not found on request. This should be protected by auth middleware.');
     return sendSuccess(res, 401, 'Authentication required.');
   }
-  const userId = req.user._id;
+  const userId = req && req.user && req.user._id;
 
   try {
     const event = await Event.findById(eventId).lean();
@@ -587,23 +636,23 @@ const importRegistrations = asyncHandler(async (req, res, next) => {
 
     const newJob = await ImportJob.create({
       eventId: eventId,
-      totalRecords: incomingRegistrations.length,
+      totalRecords: incomingRegistrations && incomingRegistrations.length,
       status: 'pending',
       createdBy: userId,
       originalFileName: originalFileName || 'Bulk Import', // Use provided filename or a default
     });
 
-    logger.info(`[ImportRegController] Created ImportJob ${newJob._id} for event ${eventId} with ${incomingRegistrations.length} records by user ${userId}.`);
+    logger.info(`[ImportRegController] Created ImportJob ${newJob._id} for event ${eventId} with ${incomingRegistrations && incomingRegistrations.length} records by user ${userId}.`);
 
     // Call the service function asynchronously. DO NOT await it here.
     processBulkImportJob(newJob._id, incomingRegistrations, eventId, userId)
       .then(() => {
         logger.info(`[ImportRegController] processBulkImportJob for ${newJob._id} finished its execution path.`);
       })
-      .catch(err => {
+      .catch(error => {
         // This catch is for errors in *triggering* or unhandled promise rejections from the async function itself,
         // not for errors *within* the job processing (those are handled by the service and saved to the job document).
-        logger.error(`[ImportRegController] Error triggering processBulkImportJob for ${newJob._id}:`, err);
+        logger.error(`[ImportRegController] Error triggering processBulkImportJob for ${newJob._id}:`, error);
         // Optionally, update the job status to failed here if the trigger itself fails catastrophically.
         // However, the service should ideally handle its own errors and update the job status.
       });
@@ -624,14 +673,14 @@ const importRegistrations = asyncHandler(async (req, res, next) => {
  * @access  Private (Admin only)
  */
 exports.deleteRegistration = asyncHandler(async (req, res, next) => {
-  const registration = await Registration.findById(req.params.id);
+  const registration = await Registration.findById(req && req.params && req.params.id);
 
   if (!registration) {
-    return next(createApiError(404, `Registration not found with id of ${req.params.id}`));
+    return next(createApiError(404, `Registration not found with id of ${req && req.params && req.params.id}`));
   }
 
   // Check if any resources have been used by this registration
-  const usedResources = await Resource.find({ registration: req.params.id });
+  const usedResources = await Resource.find({ registration: req && req.params && req.params.id });
   if (usedResources.length > 0) {
     return next(createApiError(400, 'Cannot delete registration with used resources'));
   }
@@ -651,10 +700,10 @@ exports.deleteRegistration = asyncHandler(async (req, res, next) => {
  */
 exports.generateQrCode = asyncHandler(async (req, res, next) => {
   // Find registration
-  const registration = await Registration.findById(req.params.id);
+  const registration = await Registration.findById(req && req.params && req.params.id);
 
   if (!registration) {
-    return next(createApiError(404, `Registration not found with id of ${req.params.id}`));
+    return next(createApiError(404, `Registration not found with id of ${req && req.params && req.params.id}`));
   }
 
   // Generate QR code if it doesn't exist
@@ -678,32 +727,30 @@ exports.generateQrCode = asyncHandler(async (req, res, next) => {
  */
 exports.checkInParticipant = asyncHandler(async (req, res, next) => {
   // Find registration by ID
-  const registration = await Registration.findById(req.params.id);
+  const registration = await Registration.findById(req && req.params && req.params.id);
 
   if (!registration) {
-    return next(createApiError(404, `Registration not found with id of ${req.params.id}`));
+    return next(createApiError(404, `Registration not found with id of ${req && req.params && req.params.id}`));
   }
 
   // Update check-in status
   registration.isCheckedIn = true;
   registration.checkedInAt = Date.now();
-  registration.checkedInBy = req.user._id;
+  registration.checkedInBy = req && req.user && req.user._id;
 
   // Add to activity log
   registration.activities = registration.activities || [];
-  registration.activities.push({
+  registration && registration.activities && registration.activities.push({
     action: 'Checked In',
     description: 'Participant was checked in',
-    user: req.user.name,
+    user: req && req.user && req.user.name,
     timestamp: new Date()
   });
 
   await registration.save();
 
-  res.status(200).json({
-    success: true,
-    data: registration
-  });
+  StandardErrorHandler.sendSuccess(res, 200, 'Operation successful', registration
+  );
 });
 
 /**
@@ -730,7 +777,8 @@ exports.findRegistrationByQrOrRegId = asyncHandler(async (req, res, next) => {
       { registrationId: qrOrRegId }
     ],
     event: eventId
-  }).populate('category', 'name description permissions');
+  }).populate('category', 'name color')
+    .lean();
 
   if (!registration) {
     return next(createApiError(404, 'Registration not found'));
@@ -766,10 +814,8 @@ exports.findRegistrationByQrOrRegId = asyncHandler(async (req, res, next) => {
     }))
   };
 
-  res.status(200).json({
-    success: true,
-    data: formattedRegistration
-  });
+  StandardErrorHandler.sendSuccess(res, 200, 'Operation successful', formattedRegistration
+  );
 });
 
 /**
@@ -778,35 +824,41 @@ exports.findRegistrationByQrOrRegId = asyncHandler(async (req, res, next) => {
  * @access  Private (Admin only)
  */
 exports.sendEmailToRegistrant = asyncHandler(async (req, res, next) => {
-  const { subject, message, emailType } = req.body;
+  const { subject, message, emailType  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
   
   if (!subject || !message) {
     return next(createApiError(400, 'Please provide subject and message'));
   }
 
   // Find registration
-  const registration = await Registration.findById(req.params.id)
+  const registration = await Registration.findById(req && req.params && req.params.id)
     .populate('event', 'name startDate endDate location emailSettings');
+  if (!registration) {
+    return next(createApiError(404, `Registration not found with id of ${req && req.params && req.params.id}`));
+  }
 
   if (!registration) {
-    return next(createApiError(404, `Registration not found with id of ${req.params.id}`));
+    return next(createApiError(404, `Registration not found with id of ${req && req.params && req.params.id}`));
   }
 
   // Ensure full event document to access smtp settings
   let eventDoc = registration.event;
   if (!eventDoc.emailSettings) {
-    eventDoc = await Event.findById(registration.event._id);
+    eventDoc = await Event.findById(registration && registration.event && registration.event._id);
   }
 
   // Check if email exists
-  if (!registration.contactInfo.email) {
+  if (!registration && registration.contactInfo && registration.contactInfo.email) {
     return next(createApiError(400, 'Registrant does not have an email address'));
   }
 
   try {
     // Send email
     await sendEmail({
-      to: registration.contactInfo.email,
+      to: registration && registration.contactInfo && registration.contactInfo.email,
       subject,
       html: message,
       fromName: eventDoc.emailSettings?.senderName || 'Event Organizer',
@@ -824,10 +876,10 @@ exports.sendEmailToRegistrant = asyncHandler(async (req, res, next) => {
 
     // Add to activity log
     registration.activities = registration.activities || [];
-    registration.activities.push({
+    registration && registration.activities && registration.activities.push({
       action: 'Email Sent',
-      description: `Email with subject "${subject}" was sent to ${registration.contactInfo.email}`,
-      user: req.user.name,
+      description: `Email with subject "${subject}" was sent to ${registration && registration.contactInfo && registration.contactInfo.email}`,
+      user: req && req.user && req.user.name,
       timestamp: new Date()
     });
 
@@ -836,11 +888,11 @@ exports.sendEmailToRegistrant = asyncHandler(async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
-        message: `Email sent to ${registration.contactInfo.email}`
+        message: `Email sent to ${registration && registration.contactInfo && registration.contactInfo.email}`
       }
     });
-  } catch (err) {
-    console.error('Email sending error:', err);
+  } catch (error) {
+    console.error('Email sending error:', error);
     return next(createApiError(500, 'Email could not be sent'));
   }
 });
@@ -851,56 +903,57 @@ exports.sendEmailToRegistrant = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 exports.addRegistrationNote = asyncHandler(async (req, res, next) => {
-  const { note } = req.body;
+  const { note  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
   
   if (!note) {
     return next(createApiError(400, 'Please provide a note'));
   }
 
   // Find registration
-  const registration = await Registration.findById(req.params.id);
+  const registration = await Registration.findById(req && req.params && req.params.id);
 
   if (!registration) {
-    return next(createApiError(404, `Registration not found with id of ${req.params.id}`));
+    return next(createApiError(404, `Registration not found with id of ${req && req.params && req.params.id}`));
   }
 
   // Add note to registration
   registration.notes = registration.notes || [];
-  registration.notes.push({
+  registration && registration.notes && registration.notes.push({
     text: note,
-    createdBy: req.user._id,
+    createdBy: req && req.user && req.user._id,
     createdAt: new Date()
   });
 
   // Add to activity log
   registration.activities = registration.activities || [];
-  registration.activities.push({
+  registration && registration.activities && registration.activities.push({
     action: 'Note Added',
     description: 'A note was added to the registration',
-    user: req.user.name,
+    user: req && req.user && req.user.name,
     timestamp: new Date()
   });
 
   await registration.save();
 
-  res.status(200).json({
-    success: true,
-    data: registration.notes
-  });
+  StandardErrorHandler.sendSuccess(res, 200, 'Operation successful', registration.notes
+  );
 });
 
 // @desc    Export registrations to Excel (ALL DATA, ALL FILTERS, FLATTENED)
 // @route   GET /api/events/:id/registrations/export
 // @access  Private
 const exportRegistrationsController = asyncHandler(async (req, res) => {
-  const eventId = req.params.id;
+  const eventId = req && req.params && req.params.id;
   // --- Accept all possible filters from query ---
   const {
     category, status, search, registrationType, badgePrinted, startDate, endDate, paymentStatus, workshopId
   } = req.query;
 
-  if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
-    return res.status(400).json({ success: false, message: 'Valid Event ID is required in the route.' });
+  if (!eventId || !mongoose && mongoose.Types && mongoose.Types.ObjectId.isValid(eventId)) {
+    return StandardErrorHandler.sendError(res, 400, 'Valid Event ID is required in the route.');
   }
 
   // --- Build Filter Query ---
@@ -940,7 +993,7 @@ const exportRegistrationsController = asyncHandler(async (req, res) => {
     .populate('event', 'name startDate endDate')
     .lean();
 
-  if (!registrations.length) {
+  if (!registrations && registrations.length) {
     return sendSuccess(res, 404, 'No registrations found matching the criteria for export.');
   }
 
@@ -975,8 +1028,8 @@ const exportRegistrationsController = asyncHandler(async (req, res) => {
   const allResourceTypes = ['food', 'kitBag', 'certificate'];
   const allResourceDetails = { food: new Set(), kitBag: new Set(), certificate: new Set() };
   resources.forEach(res => {
-    if (allResourceTypes.includes(res.type) && res.details && res.details.name) {
-      allResourceDetails[res.type].add(res.details.name);
+    if (allResourceTypes.includes(res.type) && res.details && res && res.details && res.details.name) {
+      allResourceDetails[res.type].add(res && res.details && res.details.name);
     }
   });
 
@@ -1055,24 +1108,24 @@ const exportRegistrationsController = asyncHandler(async (req, res) => {
     // Resource usage
     Object.entries(allResourceDetails).forEach(([type, names]) => {
       names.forEach(name => {
-        const used = resources.find(r => r.registration?.toString() === reg._id.toString() && r.type === type && r.details?.name === name && r.status !== 'voided');
+        const used = resources.find(r => r.registration?.toString() === reg && reg._id && reg._id.toString() && r.type === type && r.details?.name === name && r.status !== 'voided');
         row[`${type}_${name}`] = used ? 'Yes' : '';
       });
     });
     // Abstracts (concatenate multiple)
-    const regAbstracts = abstracts.filter(a => a.registration?.toString() === reg._id.toString());
+    const regAbstracts = abstracts.filter(a => a.registration?.toString() === reg && reg._id && reg._id.toString());
     allAbstractFields.forEach(field => {
       row[`abstract_${field}`] = regAbstracts.map(a => a[field] || '').filter(Boolean).join('; ');
     });
     // Payments (concatenate multiple)
-    const regPayments = payments.filter(p => p.registration?.toString() === reg._id.toString());
+    const regPayments = payments.filter(p => p.registration?.toString() === reg && reg._id && reg._id.toString());
     allPaymentFields.forEach(field => {
       row[`payment_${field}`] = regPayments.map(p => p[field] || '').filter(Boolean).join('; ');
     });
     // Workshops
     workshops.forEach(ws => {
-      const isRegistered = (ws.registrations || []).some(rid => rid.toString() === reg._id.toString()) ||
-        (ws.attendees || []).some(a => a.registration?.toString() === reg._id.toString());
+      const isRegistered = (ws.registrations || []).some(rid => rid.toString() === reg && reg._id && reg._id.toString()) ||
+        (ws.attendees || []).some(a => a.registration?.toString() === reg && reg._id && reg._id.toString());
       row[`workshop_${ws.title}`] = isRegistered ? 'Yes' : '';
     });
     worksheet.addRow(row);
@@ -1090,9 +1143,9 @@ const exportRegistrationsController = asyncHandler(async (req, res) => {
 
   // --- Set response headers and send file ---
   const filename = `registrations_${eventId}_${new Date().toISOString().split('T')[0]}.xlsx`;
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument && officedocument.spreadsheetml && officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  await workbook.xlsx.write(res);
+  await workbook && workbook.xlsx && workbook.xlsx.write(res);
   res.end();
 });
 
@@ -1212,8 +1265,11 @@ const getImportJobStatus = asyncHandler(async (req, res, next) => {
  * @access  Private
  */
 const getRegistrationDetailsByScan = asyncHandler(async (req, res, next) => {
-  const eventId = req.params.id; // From the parent router :id mapped to /events/:id
-  const { qrCode } = req.body; // qrCode can be registrationId string or actual QR content
+  const eventId = req && req.params && req.params.id; // From the parent router :id mapped to /events/:id
+  const { qrCode } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  }
 
   logger.info(`[getRegistrationDetailsByScan] Attempting to find registration for event: ${eventId} with QR/ID: ${qrCode}`);
 
@@ -1228,8 +1284,8 @@ const getRegistrationDetailsByScan = asyncHandler(async (req, res, next) => {
   }
 
   const match = mongoose.Types.ObjectId.isValid(qrCode)
-    ? { event: eventId, _id: qrCode }
-    : { event: eventId, $or: [{ qrCode }, { registrationId: qrCode }] };
+    ? { event: new mongoose.Types.ObjectId(eventId), _id: new mongoose.Types.ObjectId(qrCode) }
+    : { event: new mongoose.Types.ObjectId(eventId), $or: [{ qrCode }, { registrationId: qrCode }] };
 
   const registration = await Registration.findOne(match)
     .select('registrationId personalInfo firstName lastName category')
@@ -1253,8 +1309,11 @@ const getRegistrationDetailsByScan = asyncHandler(async (req, res, next) => {
  */
 const createRegistrationPublic = async (req, res, next) => {
   // Get eventId from params if route is nested, otherwise from body
-  const eventId = req.params.eventId || req.body.eventId; 
-  const { categoryId, personalInfo } = req.body;
+  const eventId = req && req.params && req.params.eventId || req && req.body && req.body.eventId && req && req.body && req.body.eventId; 
+  const { categoryId, personalInfo } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  }
 
   // Validate required fields
   if (!eventId || !categoryId || !personalInfo) {
@@ -1276,6 +1335,18 @@ const createRegistrationPublic = async (req, res, next) => {
     return sendSuccess(res, 404, 'Category not found');
   }
 
+  // Validate accompanying persons' custom fields
+  const accompanyingPersonFields = event.registrationSettings?.accompanyingPersonFields || [];
+  const requiredAccompanyingFields = accompanyingPersonFields.filter(f => f.isRequired).map(f => f.name);
+  const accompanyingPersons = req && req.body && req.body.accompanyingPerson && req && req.body && req.body.accompanyingPersons || [];
+  for (const [idx, person] of accompanyingPersons.entries()) {
+    for (const fieldName of requiredAccompanyingFields) {
+      if (!person.customFields || person.customFields[fieldName] === undefined || person.customFields[fieldName] === "") {
+        return sendSuccess(res, 400, `Accompanying person #${idx + 1} is missing required field: ${fieldName}`);
+      }
+    }
+  }
+  
   // --- Use Counter Pattern for ID Generation --- 
   const registrationPrefix = event.registrationSettings?.idPrefix || 'REG';
   const startNumber = event.registrationSettings?.startNumber || 1;
@@ -1308,20 +1379,17 @@ const createRegistrationPublic = async (req, res, next) => {
       category: categoryId,
       personalInfo,
       // PATCH: Save professionalInfo if provided
-      ...(req.body.professionalInfo && { professionalInfo: req.body.professionalInfo }),
+      ...(req && req.body && req.body.professionalInf && req && req.body && req.body.professionalInfo && { professionalInfo: req && req.body && req.body.professionalInfo && req && req.body && req.body.professionalInfo }),
       // PATCH: Save customFields if provided
-      ...(req.body.customFields && { customFields: req.body.customFields }),
+      ...(req && req.body && req.body.customField && req && req.body && req.body.customFields && { customFields: req && req.body && req.body.customFields && req && req.body && req.body.customFields }),
       status: 'active',
       createdAt: new Date(),
       updatedAt: new Date()
     });
-  } catch (err) {
+  } catch (error) {
     if (err.code === 11000) {
       // Duplicate key error (likely due to unique index on event/category/first/last name)
-      return res.status(400).json({
-        success: false,
-        message: 'A registration with this name already exists in this category for this event.'
-      });
+      return StandardErrorHandler.sendError(res, 400, 'A registration with this name already exists in this category for this event.');
     }
     // Other errors
     return res.status(500).json({
@@ -1335,12 +1403,15 @@ const createRegistrationPublic = async (req, res, next) => {
   const populatedRegistration = await Registration.findById(registration._id)
     .populate('event', 'name startDate endDate logo')
     .populate('category', 'name color permissions');
+  
+  if (!populatedRegistration) {
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+  }
 
   // Send registration confirmation email if enabled
   if (event.emailSettings?.enabled && 
       event.emailSettings?.automaticEmails?.registrationConfirmation) {
     try {
-      const emailService = require('../services/emailService');
       await emailService.sendRegistrationConfirmationEmail(registration._id);
     } catch (error) {
       console.error('Failed to send registration confirmation email:', error);
@@ -1353,15 +1424,628 @@ const createRegistrationPublic = async (req, res, next) => {
 
 // --- PATCH: Enforce sponsoredBy for sponsored registrations ---
 function validateSponsoredBy(req, res, next) {
-  const { registrationType, sponsoredBy } = req.body;
+  const { registrationType, sponsoredBy  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
   if (registrationType === 'sponsored' && !sponsoredBy) {
-    return res.status(400).json({
-      success: false,
-      message: 'sponsoredBy is required when registrationType is sponsored.'
-    });
+    return StandardErrorHandler.sendError(res, 400, 'sponsoredBy is required when registrationType is sponsored.');
   }
   next();
 }
+
+const sendPaymentLink = async (req, res, next) => {
+  try {
+    const { eventId, registrationId } = req.params;
+    const { link  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
+    const registration = await Registration.findById(registrationId);
+    const event = await Event.findById(eventId);
+    if (!registration || !event) return res.status(404).json({ success: false, message: 'Not found' });
+    if (!registration.personalInfo?.email) return StandardErrorHandler.sendError(res, 400, 'No email on file');
+    const subject = `Payment Link for ${event.name}`;
+    const html = `Dear ${registration && registration.personalInfo && registration.personalInfo.firstName || 'Attendee'},<br/><br/>Please complete your payment for <b>${event.name}</b> using the link below:<br/><br/><a href="${link}">${link}</a><br/><br/>Regards,<br/>${event.name} Team`;
+    await emailService.sendGenericEmail({
+      to: registration && registration.personalInfo && registration.personalInfo.email,
+      subject,
+      html,
+      from: event.emailSettings?.senderEmail || undefined
+    });
+    sendSuccess(res, 200, 'Payment link sent');
+  } catch (error) {
+    next(err);
+  }
+};
+
+// =====================================================
+// NEW: Component-Based Registration Functions
+// =====================================================
+
+/**
+ * @desc    Get available registration components for an event
+ * @route   GET /api/events/:eventId/registration-components
+ * @access  Public
+ */
+const getAvailableComponents = asyncHandler(async (req, res) => {
+  const { eventId } = req.params;
+  const { audience, category } = req.query;
+  
+  // Validate event exists
+  const event = await Event.findById(eventId);
+  if (!event) {
+    return sendSuccess(res, 404, 'Event not found');
+  }
+  
+  // Check if component-based registration is enabled
+  if (!event.isComponentBasedRegistration()) {
+    return sendSuccess(res, 200, 'Component-based registration not enabled for this event', {
+      enabled: false,
+      components: []
+    });
+  }
+  
+  // Get available components
+  const components = {
+    enabled: true,
+    dailyComponents: event.getAvailableDailyComponents(audience, category),
+    workshopComponents: event.getAvailableWorkshopComponents(audience, category),
+    sessionComponents: event && event.registrationComponents && event.registrationComponents.sessionComponents
+      .filter(session => session.active)
+      .map(session => ({
+        sessionId: session.sessionId,
+        name: session.name,
+        description: session.description,
+        componentType: session.componentType,
+        pricing: session && session.pricing && session.pricing.filter(price =>
+          (!audience || !price.audience || price.audience === audience) &&
+          (!category || !price.category || price.category === category)
+        ),
+        entitlements: session.entitlements
+      })),
+    packageDeals: event && event.registrationComponents && event.registrationComponents.packageDeals
+      .filter(pkg => pkg.active)
+      .map(pkg => ({
+        name: pkg.name,
+        description: pkg.description,
+        includedComponents: pkg.includedComponents,
+        pricing: pkg && pkg.pricing && pkg.pricing.filter(price =>
+          (!audience || !price.audience || price.audience === audience) &&
+          (!category || !price.category || price.category === category)
+        ),
+        constraints: pkg.constraints
+      }))
+  };
+  
+  return sendSuccess(res, 200, 'Available registration components retrieved successfully', components);
+});
+
+/**
+ * @desc    Calculate component-based registration pricing
+ * @route   POST /api/events/:eventId/registration-components/calculate-price
+ * @access  Public
+ */
+const calculateComponentPrice = asyncHandler(async (req, res) => {
+  const { eventId } = req.params;
+  const { components, audience, category  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
+  
+  // Validate input
+  if (!Array.isArray(components) || components.length === 0) {
+    return sendSuccess(res, 400, 'Components array is required');
+  }
+  
+  // Validate event exists
+  const event = await Event.findById(eventId);
+  if (!event) {
+    return sendSuccess(res, 404, 'Event not found');
+  }
+  
+  // Check if component-based registration is enabled
+  if (!event.isComponentBasedRegistration()) {
+    return sendSuccess(res, 400, 'Component-based registration not enabled for this event');
+  }
+  
+  // Validate component combination
+  const validation = event.validateComponentCombination(components);
+  if (!validation.valid) {
+    return sendSuccess(res, 400, 'Invalid component combination', {
+      errors: validation.errors
+    });
+  }
+  
+  // Calculate pricing
+  const pricing = event.calculateComponentTotal(components, audience, category);
+  
+  return sendSuccess(res, 200, 'Component pricing calculated successfully', {
+    pricing,
+    validation: validation
+  });
+});
+
+/**
+ * @desc    Create component-based registration
+ * @route   POST /api/events/:eventId/component-registrations
+ * @access  Public
+ */
+const createComponentRegistration = asyncHandler(async (req, res) => {
+  const { eventId } = req.params;
+  const { categoryId, 
+    personalInfo, 
+    professionalInfo,
+    customFields,
+    components, 
+    audience, 
+    paymentInfo 
+   } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
+  
+  // Validate required fields
+  if (!eventId || !categoryId || !personalInfo || !Array.isArray(components) || components.length === 0) {
+    return sendSuccess(res, 400, 'Missing required fields: eventId, categoryId, personalInfo, components');
+  }
+  
+  // Check if event exists and component registration is enabled
+  const event = await Event.findById(eventId);
+  if (!event) {
+    return sendSuccess(res, 404, 'Event not found');
+  }
+  
+  if (!event.isComponentBasedRegistration()) {
+    return sendSuccess(res, 400, 'Component-based registration not enabled for this event');
+  }
+  
+  if (!event.registrationSettings?.isOpen) {
+    return sendSuccess(res, 403, 'Registration for this event is currently closed');
+  }
+  
+  // Check if category exists
+  const category = await Category.findById(categoryId);
+  if (!category) {
+    return sendSuccess(res, 404, 'Category not found');
+  }
+  
+  // Validate component combination
+  const validation = event.validateComponentCombination(components);
+  if (!validation.valid) {
+    return sendSuccess(res, 400, 'Invalid component combination', {
+      errors: validation.errors
+    });
+  }
+  
+  // Calculate pricing
+  const pricing = event.calculateComponentTotal(components, audience, category.name);
+  
+  // Generate unique registration ID
+  const registrationPrefix = event.registrationSettings?.idPrefix || 'REG';
+  const startNumber = event.registrationSettings?.startNumber || 1;
+  const sequenceName = `${eventId}_registration_id`;
+  
+  let registrationId;
+  try {
+    const nextNumber = await getNextSequenceValue(sequenceName, startNumber);
+    const formattedNumber = nextNumber.toString().padStart(4, '0');
+    registrationId = `${registrationPrefix}-${formattedNumber}`;
+    
+    // Double-check uniqueness
+    const existing = await Registration.findOne({ event: eventId, registrationId: registrationId });
+    if (existing) {
+      console.error(`Generated duplicate ID ${registrationId} for event ${eventId}`);
+      return sendSuccess(res, 500, 'Failed to generate unique registration ID. Please try again.');
+    }
+  } catch (error) {
+    console.error("Error generating registration ID:", error);
+    return sendSuccess(res, 500, 'Failed to generate registration ID');
+  }
+  
+  // Create registration components with entitlements
+  const registrationComponents = components.map(comp => {
+    const component = {
+      componentType: comp.componentType,
+      name: comp.name || `${comp.componentType} - ${comp.componentId}`,
+      description: comp.description,
+      basePrice: {
+        cents: 0,
+        currency: pricing.currency
+      },
+      finalPrice: {
+        cents: 0,
+        currency: pricing.currency
+      },
+      config: {
+        accessLevel: 'full'
+      },
+      entitlements: {
+        mainEventAccess: comp.componentType === 'main-event',
+        dayAccess: {},
+        meals: { breakfast: [], lunch: [], dinner: [], snacks: [] },
+        kitItems: [],
+        certificates: [],
+        workshops: [],
+        sessions: [],
+        networking: {
+          welcomeReception: false,
+          dinnerBanquet: false,
+          networkingBreaks: false,
+          closingCeremony: false
+        },
+        virtualAccess: {
+          liveStreaming: false,
+          recordings: false,
+          presentations: false,
+          digitalResources: false
+        },
+        badgeAccess: true,
+        printingAccess: true
+      },
+      status: 'active',
+      purchaseDate: new Date()
+    };
+    
+    // Set component-specific entitlements based on event configuration
+    if (comp.componentType === 'daily' && comp.componentId) {
+      const dayConfig = event && event.registrationComponents && event.registrationComponents.dailyConfiguration.days
+        .find(d => d.dayId === comp.componentId);
+      if (dayConfig) {
+        const dayPricing = dayConfig.componentPricing
+          .find(p => (!audience || !p.audience || p.audience === audience));
+        if (dayPricing) {
+          if (component && component.basePrice) {
+            component.basePrice.cents = dayPricing.priceCents;
+          }
+          if (component && component.finalPrice) {
+            component.finalPrice.cents = dayPricing.priceCents;
+          }
+          component.entitlements = { ...component.entitlements, ...dayPricing.entitlements };
+          if (component && component.entitlements && component.entitlements.dayAccess) {
+            component.entitlements.dayAccess[comp.componentId] = true;
+          }
+        }
+      }
+    }
+    
+    // Set workshop entitlements
+    if ((comp.componentType === 'workshop-standalone' || comp.componentType === 'workshop-addon') && comp.componentId) {
+      const workshopConfig = event && event.registrationComponents && event.registrationComponents.workshopComponents
+        .find(w => w && w.workshopId && w.workshopId.toString() === comp.componentId);
+      if (workshopConfig) {
+        const workshopPricing = workshopConfig.pricing
+          .find(p => (!audience || !p.audience || p.audience === audience));
+        if (workshopPricing) {
+          if (component && component.basePrice) {
+            component.basePrice.cents = workshopPricing.priceCents;
+          }
+          if (component && component.finalPrice) {
+            component.finalPrice.cents = workshopPricing.priceCents;
+          }
+          if (component && component.entitlements && component.entitlements.workshops) {
+            component.entitlements.workshops.push({
+            workshopId: comp.componentId,
+            accessType: 'participant'
+          });
+          }
+        }
+      }
+    }
+    
+    return component;
+  });
+  
+  // Determine registration type
+  let registrationType = 'component-based'; // New type for component registrations
+  if (pricing.appliedPackage) {
+    registrationType = 'package-deal';
+  }
+  if (new Date() > new Date(event.startDate)) {
+    registrationType = 'onsite-component';
+  }
+  
+  // Create the registration
+  let registration;
+  try {
+    registration = await Registration.create({
+      registrationId,
+      event: eventId,
+      category: categoryId,
+      personalInfo,
+      ...(professionalInfo && { professionalInfo }),
+      ...(customFields && { customFields }),
+      registrationComponents,
+      registrationType,
+      status: 'active',
+      pricing: {
+        totalAmount: {
+          cents: pricing.totalCents,
+          currency: pricing.currency
+        },
+        breakdown: pricing.breakdown,
+        appliedPackage: pricing.appliedPackage
+      },
+      amountCents: pricing.totalCents,
+      currency: pricing.currency,
+      paymentStatus: pricing.totalCents > 0 ? 'pending' : 'paid',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+  } catch (error) {
+    if (err.code === 11000) {
+      return StandardErrorHandler.sendError(res, 400, 'A registration with this name already exists in this category for this event.');
+    }
+    console.error('Registration creation error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create component registration',
+      error: err.message
+    });
+  }
+  
+  // Populate the registration
+  const populatedRegistration = await Registration.findById(registration._id)
+    .populate('event', 'name startDate endDate logo')
+    .populate('category', 'name color permissions');
+  
+  if (!populatedRegistration) {
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+  }
+  
+  // Send registration confirmation email
+  if (event.emailSettings?.enabled && 
+      event.emailSettings?.automaticEmails?.registrationConfirmation) {
+    try {
+      await emailService.sendRegistrationConfirmationEmail(registration._id);
+    } catch (error) {
+      console.error('Failed to send registration confirmation email:', error);
+    }
+  }
+  
+  return sendSuccess(res, 201, 'Component-based registration created successfully', {
+    registration: populatedRegistration,
+    pricing: pricing
+  });
+});
+
+/**
+ * @desc    Update existing registration with additional components
+ * @route   POST /api/events/:eventId/registrations/:registrationId/add-components
+ * @access  Private
+ */
+const addComponentsToRegistration = asyncHandler(async (req, res) => {
+  const { eventId, registrationId } = req.params;
+  const { components, audience  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
+  
+  // Find the registration
+  const registration = await Registration.findOne({
+    _id: registrationId,
+    event: eventId
+  }).populate('category', 'name');
+  if (!registration) {
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+  }
+  
+  if (!registration) {
+    return sendSuccess(res, 404, 'Registration not found');
+  }
+  
+  // Find the event
+  const event = await Event.findById(eventId);
+  if (!event || !event.isComponentBasedRegistration()) {
+    return sendSuccess(res, 400, 'Component-based registration not enabled for this event');
+  }
+  
+  // Validate new components
+  const allComponents = [
+    ...registration && registration.registrationComponents && registration.registrationComponents.map(rc => ({
+      componentType: rc.componentType,
+      componentId: rc.config?.componentId || rc.name
+    })),
+    ...components
+  ];
+  
+  const validation = event.validateComponentCombination(allComponents);
+  if (!validation.valid) {
+    return sendSuccess(res, 400, 'Invalid component combination', {
+      errors: validation.errors
+    });
+  }
+  
+  // Calculate pricing for new components
+  const newComponentPricing = event.calculateComponentTotal(components, audience, registration && registration.category && registration.category.name);
+  
+  // Add new components to registration
+  components.forEach(comp => {
+    const newComponent = {
+      componentType: comp.componentType,
+      name: comp.name || `${comp.componentType} - ${comp.componentId}`,
+      description: comp.description,
+      basePrice: { cents: 0, currency: 'INR' },
+      finalPrice: { cents: 0, currency: 'INR' },
+      config: { accessLevel: 'full' },
+      entitlements: {
+        mainEventAccess: comp.componentType === 'main-event',
+        dayAccess: {},
+        meals: { breakfast: [], lunch: [], dinner: [], snacks: [] },
+        kitItems: [],
+        certificates: [],
+        workshops: [],
+        sessions: [],
+        networking: {
+          welcomeReception: false,
+          dinnerBanquet: false,
+          networkingBreaks: false,
+          closingCeremony: false
+        },
+        virtualAccess: {
+          liveStreaming: false,
+          recordings: false,
+          presentations: false,
+          digitalResources: false
+        },
+        badgeAccess: true,
+        printingAccess: true
+      },
+      status: 'active',
+      purchaseDate: new Date()
+    };
+    
+    // Set component pricing from event configuration
+    const price = event.getComponentPrice(comp.componentType, comp.componentId, audience, registration && registration.category && registration.category.name);
+    if (price) {
+      if (newComponent && newComponent.basePrice) {
+        newComponent.basePrice.cents = price.priceCents;
+      }
+      if (newComponent && newComponent.finalPrice) {
+        newComponent.finalPrice.cents = price.priceCents;
+      }
+    }
+    
+    registration && registration.registrationComponents && registration.registrationComponents.push(newComponent);
+  });
+  
+  // Update total pricing
+  const currentTotal = registration.amountCents || 0;
+  registration.amountCents = currentTotal + newComponentPricing.totalCents;
+  
+  // Update aggregated entitlements
+  if (registration.updateAggregatedEntitlements) {
+  registration.updateAggregatedEntitlements();
+  }
+  
+  // If there's a new payment amount, update payment status
+  if (newComponentPricing.totalCents > 0) {
+    registration.paymentStatus = 'pending';
+  }
+  
+  await registration.save();
+  
+  // Populate and return
+  const updatedRegistration = await Registration.findById(registration._id)
+    .populate('event', 'name startDate endDate logo')
+    .populate('category', 'name color permissions');
+  
+  if (!updatedRegistration) {
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+  }
+  
+  return sendSuccess(res, 200, 'Components added to registration successfully', {
+    registration: updatedRegistration,
+    addedComponents: components,
+    additionalCost: newComponentPricing
+  });
+});
+
+/**
+ * Get resource usage for a specific registration
+ * @route   GET /api/events/:eventId/registrations/:registrationId/resource-usage
+ * @access  Private (Admin, Staff, Organizer)
+ */
+const getRegistrationResourceUsage = async (req, res, next) => {
+  try {
+    const { eventId, registrationId } = req.params;
+    
+    // Validate IDs
+    if (!eventId || !registrationId) {
+      return next(createApiError(400, 'Event ID and Registration ID are required'));
+    }
+    
+    // Get resource usage from Resource model
+    const Resource = require('../models/Resource');
+    const resourceUsage = await Resource.find({
+      event: eventId,
+      registration: registrationId
+    }).sort({ createdAt: -1 });
+    
+    // Transform the data for frontend consumption
+    const formattedUsage = resourceUsage.map(resource => ({
+      _id: resource._id,
+      type: resource.type,
+      displayName: resource.details?.displayName || resource.details?.option || resource.type,
+      actionDate: resource.createdAt,
+      createdAt: resource.createdAt,
+      isVoided: resource.isVoided || false,
+      voidedAt: resource.voidedAt,
+      voidedBy: resource.voidedBy,
+      details: resource.details
+    }));
+    
+    sendSuccess(res, 200, 'Resource usage retrieved successfully', formattedUsage);
+  } catch (error) {
+    console.error('Error getting registration resource usage:', error);
+    next(createApiError(500, 'Error retrieving resource usage'));
+  }
+};
+
+/**
+ * @desc    Public registration lookup by registration ID (no auth required)
+ * @route   POST /api/events/:eventId/registrations/public-lookup
+ * @access  Public
+ */
+const publicRegistrationLookup = asyncHandler(async (req, res) => {
+  const { eventId } = req.params;
+  const { registrationId  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
+
+  if (!registrationId) {
+    return sendSuccess(res, 400, 'Registration ID is required');
+  }
+
+  if (!mongoose && mongoose.Types && mongoose.Types.ObjectId.isValid(eventId)) {
+    return sendSuccess(res, 400, 'Invalid Event ID format');
+  }
+
+  try {
+    // Find registration by registrationId string and event
+    const registration = await Registration.findOne({
+      event: eventId,
+      registrationId: registrationId.trim()
+    })
+    .populate('event', 'name startDate endDate')
+    .populate('category', 'name color')
+    .populate('sponsoredBy', 'companyName name contactPerson email sponsorshipLevel');
+
+    if (!registration) {
+      return sendSuccess(res, 404, 'Registration not found with the provided ID');
+    }
+
+    // Return only public-safe information
+    const publicData = {
+      _id: registration._id,
+      registrationId: registration.registrationId,
+      personalInfo: {
+        firstName: registration.personalInfo?.firstName,
+        lastName: registration.personalInfo?.lastName,
+        email: registration.personalInfo?.email,
+        phone: registration.personalInfo?.phone,
+        organization: registration.personalInfo?.organization,
+        designation: registration.personalInfo?.designation,
+        country: registration.personalInfo?.country
+      },
+      category: registration.category,
+      registrationType: registration.registrationType,
+      status: registration.status,
+      paymentStatus: registration.paymentStatus,
+      checkIn: registration.checkIn,
+      badgePrinted: registration.badgePrinted,
+      createdAt: registration.createdAt,
+      sponsoredBy: registration.sponsoredBy,
+      event: registration.event
+    };
+
+    return sendSuccess(res, 200, 'Registration found successfully', publicData);
+  } catch (error) {
+    console.error('Error in public registration lookup:', error);
+    return sendSuccess(res, 500, 'An error occurred while searching for the registration');
+  }
+});
 
 module.exports = {
   getRegistrations,
@@ -1376,5 +2060,13 @@ module.exports = {
   getRegistrationStatistics,
   getImportJobStatus,
   getRegistrationDetailsByScan,
-  createRegistrationPublic
+  createRegistrationPublic,
+  sendPaymentLink,
+  // NEW: Component-based registration functions
+  getAvailableComponents,
+  calculateComponentPrice,
+  createComponentRegistration,
+  addComponentsToRegistration,
+  getRegistrationResourceUsage,
+  publicRegistrationLookup
 }; 

@@ -130,7 +130,7 @@ async function processBulkImportJob(jobId, registrationsData, eventId, userId) {
               throw new Error('Failed to obtain a valid starting sequence number from getNextSequenceBlock.');
           }
           logger.info(`[ImportJob-${jobId}] Reserved block for ${sequenceName} starting at ${startingSequenceNum} (Count: ${recordsNeedingId.length}).`);
-      } catch (counterError) {
+      } catch (error) {
           logger.error(`[ImportJob-${jobId}] Critical error obtaining sequence block for ${sequenceName}: ${counterError.message}.`);
           // Mark these records as failed
           recordsNeedingId.forEach(regData => {
@@ -291,7 +291,7 @@ async function processBulkImportJob(jobId, registrationsData, eventId, userId) {
         try {
           await job.save();
           logger.info(`[ImportJob-${jobId}] Job progress saved. Processed: ${job.processedRecords}/${job.totalRecords}. Successful: ${job.successfulRecords}, Failed: ${job.failedRecords}`);
-        } catch (saveError) {
+        } catch (error) {
           logger.error(`[ImportJob-${jobId}] CRITICAL: Failed to save job progress during batch processing:`, saveError);
           // Decide if we should abort or continue. For now, log and continue.
         }
@@ -339,7 +339,7 @@ async function processBulkImportJob(jobId, registrationsData, eventId, userId) {
       try {
         await job.save();
         logger.info(`[ImportJob-${jobId}] Processing finished. Status: ${job.status}. Successful: ${job.successfulRecords}, Failed: ${job.failedRecords}`);
-      } catch (saveError) {
+      } catch (error) {
         logger.error(`[ImportJob-${jobId}] CRITICAL: Failed to save final job state for job ${jobId}:`, saveError);
       }
     }

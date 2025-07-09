@@ -24,18 +24,43 @@ const abstractService = {
     // Use correct endpoint for admin/staff/reviewer
     let url;
     if (userRole === 'registrant') {
-      url = `/events/${eventId}/abstracts`;
+      url = `/registrant-portal/events/${eventId}/abstracts`;
     } else {
       url = `/events/${eventId}/abstracts/all-event-abstracts`;
     }
     try {
       let response;
       if (userRole === 'registrant') {
-        response = await getApiInstance().get(url, { params });
+        response = await apiRegistrant.get(url, { params });
       } else {
         response = await api.get(url, { params });
       }
-      return response.data;
+
+      // Normalise the shape so callers can depend on { success, data, count }
+      const raw = response.data || {};
+      let abstractsArr = [];
+      let count = 0;
+
+      if (userRole === 'registrant') {
+        // Registrant portal returns { status:'success', data:{ abstracts:[...] }, results:n }
+        if (Array.isArray(raw.data?.abstracts)) {
+          abstractsArr = raw.data.abstracts;
+          count = raw.results ?? abstractsArr.length;
+        }
+      } else {
+        // Admin/staff endpoints return { success: true, data: [...], meta: { pagination: { total: n } } }
+        if (Array.isArray(raw.data)) {
+          abstractsArr = raw.data;
+          count = raw.meta?.pagination?.total ?? abstractsArr.length;
+        }
+      }
+
+      return {
+        success: raw.status === 'success' || raw.success === true,
+        data: abstractsArr,
+        count,
+        message: raw.message
+      };
     } catch (error) {
       console.error('[AbstractService] Exception fetching abstracts:', error.response?.data || error.message);
       return {
@@ -118,12 +143,12 @@ const abstractService = {
     if (cleanedData.category) cleanedData.category = String(cleanedData.category);
     if (cleanedData.topic) cleanedData.topic = String(cleanedData.topic);
 
-    const url = `/events/${eventId}/abstracts`;
+    const url = `/registrant-portal/events/${eventId}/abstracts`;
     console.log("[AbstractService] Creating abstract (registrant) for URL:", url);
     console.log("[AbstractService] Data being sent:", cleanedData);
 
     try {
-      const response = await getApiInstance().post(url, cleanedData);
+      const response = await apiRegistrant.post(url, cleanedData);
       return response.data;
     } catch (error) {
       console.error('[AbstractService] Exception creating abstract (registrant):', error.response?.data || error.message);
@@ -148,7 +173,7 @@ const abstractService = {
     // Therefore, it should use apiRegistrant
     try {
       console.log(`[AbstractService] Updating abstract (registrant): ${abstractId} in event ${eventId}`);
-      const response = await getApiInstance().put(`/events/${eventId}/abstracts/${abstractId}`, abstractData);
+      const response = await apiRegistrant.put(`/registrant-portal/events/${eventId}/abstracts/${abstractId}`, abstractData);
       return response.data;
     } catch (error) {
       console.error('[AbstractService] Exception updating abstract (registrant):', error.response?.data || error.message);
@@ -184,12 +209,12 @@ const abstractService = {
    * @returns {Promise<object>} - API response object { success: boolean, message?: string }
    */
   deleteAbstract: async (eventId, abstractId) => {
-    const relativeUrl = `/events/${eventId}/abstracts/${abstractId}`;
+    const relativeUrl = `/registrant-portal/events/${eventId}/abstracts/${abstractId}`;
     console.log(`[AbstractService] Attempting to delete abstract (registrant): DELETE ${relativeUrl}`);
     
     try {
       // Use apiRegistrant.delete for consistency and to leverage Axios interceptors
-      const response = await getApiInstance().delete(relativeUrl);
+      const response = await apiRegistrant.delete(relativeUrl);
 
       // Axios typically puts the response data in response.data
       // And handles non-2xx statuses as errors, caught by the catch block.
@@ -237,13 +262,13 @@ const abstractService = {
       const formData = new FormData();
     formData.append('file', file); // The backend multer middleware expects a field named 'file'
 
-    const url = `/events/${eventId}/abstracts/${abstractId}/file`;
+    const url = `/registrant-portal/events/${eventId}/abstracts/${abstractId}/file`;
     console.log(`[AbstractService] Uploading abstract file (registrant) to: ${url}`);
 
     try {
       // Use apiRegistrant.post for FormData. Axios will set Content-Type to multipart/form-data.
       // The apiRegistrant interceptor will add the registrant auth token.
-      const response = await getApiInstance().post(url, formData, {
+      const response = await apiRegistrant.post(url, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       // No need to manually set Content-Type header for FormData with Axios

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useRegistrantAuth } from '../../contexts/RegistrantAuthContext.jsx';
+import { useRegistrantAuth } from '../../contexts/RegistrantAuthContext';
 
 const RegistrantResetPassword = () => {
   const { token } = useParams();

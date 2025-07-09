@@ -10,12 +10,14 @@ const {
 } = require('../controllers/badgeTemplate.controller');
 
 const { protect } = require('../middleware/auth.middleware');
+const logger = require('../utils/logger');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 const router = express.Router();
 
 // Add a test route that doesn't require authentication
 router.get('/test', (req, res) => {
-  console.log('Badge template test route hit');
+  logger.info('Badge template test route hit');
   return res.status(200).json({
     success: true,
     message: 'Badge template routes are working!'
@@ -27,9 +29,9 @@ router.use(protect);
 
 // Debugging middleware to log all requests to badge template routes
 router.use((req, res, next) => {
-  console.log(`[BADGE-TEMPLATE] ${req.method} request to ${req.originalUrl}`);
-  console.log('[BADGE-TEMPLATE] Request body:', req.body);
-  console.log('[BADGE-TEMPLATE] User:', req.user ? req.user.id : 'Not authenticated');
+  logger.info(`[BADGE-TEMPLATE] ${req.method} request to ${req.originalUrl}`);
+  logger.info('[BADGE-TEMPLATE] Request body:', req.body);
+  logger.info('[BADGE-TEMPLATE] User:', req.user ? req.user.id : 'Not authenticated');
   next();
 });
 
@@ -49,6 +51,6 @@ router.route('/:id/duplicate')
 // Add route for setting default badge template
 router.post('/:eventId/:templateId/set-default', setDefaultTemplate);
 
-console.log('Badge template routes have been defined in the router');
+logger.info('Badge template routes have been defined in the router');
 
 module.exports = router; 

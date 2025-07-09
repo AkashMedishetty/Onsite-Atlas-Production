@@ -51,10 +51,7 @@ const CategoriesTab = ({ event, debug = false }) => {
   const [kitSettings, setKitSettings] = useState(null);
   const [certificateSettings, setCertificateSettings] = useState(null);
 
-  // Force re-render when switching tabs
-  const [renderKey, setRenderKey] = useState(Date.now());
-  
-  // Reset state and force re-render when eventId changes
+  // Reset state when eventId changes (natural React behavior)
   useEffect(() => {
     console.log('CategoriesTab - EventId changed, resetting state:', eventId);
     setCategories([]);
@@ -66,7 +63,6 @@ const CategoriesTab = ({ event, debug = false }) => {
       categoriesWithCertificates: 0
     });
     setLoading(true);
-    setRenderKey(Date.now());
   }, [eventId]);
 
   // If debug mode is enabled, log key information
@@ -80,7 +76,7 @@ const CategoriesTab = ({ event, debug = false }) => {
 
   // Load data on component mount or when event/id changes
   useEffect(() => {
-    console.log('CategoriesTab - Loading data for eventId:', eventId, 'renderKey:', renderKey);
+    console.log('CategoriesTab - Loading data for eventId:', eventId);
     
     // Only load if auth check is done, user is authenticated, and eventId exists
     if (eventId && !authLoading && isAuthenticated) {
@@ -95,7 +91,7 @@ const CategoriesTab = ({ event, debug = false }) => {
     return () => {
       console.log('CategoriesTab - Cleaning up');
     };
-  }, [eventId, renderKey, authLoading, isAuthenticated]);
+  }, [eventId, authLoading, isAuthenticated]);
 
   // Fetch categories and calculate statistics
   const fetchCategoriesAndStats = async () => {

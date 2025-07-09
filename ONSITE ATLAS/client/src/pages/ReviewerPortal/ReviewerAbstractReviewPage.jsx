@@ -10,13 +10,13 @@ import { API_URL } from '../../config'; // For file download links
 import { Button, Spinner, Alert, Card, Input, Textarea, Select } from '../../components/common'; 
 
 const ReviewerAbstractReviewPage = () => {
-  const { abstractId } = useParams();
+  const { abstractId, eventId: urlEventId } = useParams(); // Extract both abstractId and eventId from URL
   const navigate = useNavigate();
   const location = useLocation(); // Get location object
-  const { user: authUser, isAuthenticated, loading: authLoading } = useAuth(); // Get all relevant values
+  const { user: authUser, isAuthenticated, loading: authLoading, currentEventId } = useAuth(); // Get all relevant values
 
-  // Extract eventId from location state
-  const eventId = location.state?.eventId || localStorage.getItem('currentEventId');
+  // Extract eventId with priority: URL > AuthContext > location state > localStorage
+  const eventId = urlEventId || currentEventId || location.state?.eventId || localStorage.getItem('currentEventId');
 
   const [abstract, setAbstract] = useState(null);
   const [loading, setLoading] = useState(true);

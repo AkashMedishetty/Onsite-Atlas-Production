@@ -53,7 +53,7 @@ export function AuthProvider({ children }) {
     checkLoggedIn();
   }, []);
   
-  const login = async (email, password, eventIdFromUrl) => {
+  const login = async (email, password, eventIdFromUrl, loginContext = 'default') => {
     try {
       setError('');
       const response = await api.post('/auth/login', { email, password }); 
@@ -98,15 +98,34 @@ export function AuthProvider({ children }) {
           console.log('[AuthContext] No eventId from login URL, cleared currentEventId.');
         }
         
-        // --- REDIRECT LOGIC ---
+        // --- IMPROVED REDIRECT LOGIC ---
         const redirect = localStorage.getItem('redirectAfterLogin');
+        
         if (redirect) {
+          // First priority: Honor explicit redirect request
           localStorage.removeItem('redirectAfterLogin');
+          console.log('[AuthContext] Redirecting to stored location:', redirect);
           window.location.href = redirect;
-        } else if (user && (user.role === 'reviewer' || user.role === 'admin')) {
-          window.location.href = '/reviewer/dashboard';
+        } else if (loginContext === 'reviewer') {
+          // Second priority: Honor login context (reviewer portal login)
+          console.log('[AuthContext] Reviewer portal login - redirecting to reviewer dashboard');
+          if (eventIdFromUrl) {
+            window.location.href = `/reviewer/${eventIdFromUrl}/dashboard`;
+          } else {
+            window.location.href = '/reviewer/dashboard'; // Fallback to legacy route
+          }
+        } else if (loginContext === 'admin' || loginContext === 'default') {
+          // Third priority: Main login should go to home page
+          console.log('[AuthContext] Main login - redirecting to home page');
+          window.location.href = '/';
         } else {
-          window.location.href = '/dashboard'; // fallback for other roles
+          // Fallback: Legacy behavior based on role (should rarely be used now)
+          console.log('[AuthContext] Using legacy role-based redirect');
+          if (user && (user.role === 'reviewer' || user.role === 'admin')) {
+            window.location.href = '/reviewer/dashboard';
+          } else {
+            window.location.href = '/';
+          }
         }
         
         return user;

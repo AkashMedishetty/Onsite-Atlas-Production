@@ -4,6 +4,12 @@ const resourceSchema = new mongoose.Schema({
   // Event this resource belongs to
   event: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'Event',
     required: true,
     index: true
@@ -12,22 +18,40 @@ const resourceSchema = new mongoose.Schema({
   // Registration this resource is assigned to (if applicable)
   registration: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'Registration',
     index: true
   },
   
   // Resource type (food, kitBag, certificate)
   type: {
-    type: String,
+    type: String, trim: true,
     required: true,
     enum: ['food', 'kitBag', 'certificate', 'certificatePrinting'],
+        validate: {
+          validator: function(value) {
+            return !value || this.schema.path(this.$__.path).enumValues.includes(value);
+          },
+          message: 'Invalid enum value'
+        },
     index: true
   },
   
   // Resource status
   status: {
-    type: String,
+    type: String, trim: true,
     enum: ['created', 'assigned', 'used', 'voided'],
+        validate: {
+          validator: function(value) {
+            return !value || this.schema.path(this.$__.path).enumValues.includes(value);
+          },
+          message: 'Invalid enum value'
+        },
     default: 'created',
     index: true
   },
@@ -40,7 +64,7 @@ const resourceSchema = new mongoose.Schema({
   
   // --- Denormalised registration info for ultra-fast scan history ---
   registrationId: {
-    type: String,
+    type: String, trim: true,
     index: true
   },
   firstName: String,
@@ -50,7 +74,7 @@ const resourceSchema = new mongoose.Schema({
   
   // Option ID (e.g., mealId, kitItemId) duplicated for fast index lookups
   resourceOption: {
-    type: String,
+    type: String, trim: true,
     index: true
   },
   
@@ -58,12 +82,18 @@ const resourceSchema = new mongoose.Schema({
   
   // Reason if resource was voided
   voidReason: {
-    type: String
+    type: String, trim: true
   },
   
   // User who created the resource
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'User',
     required: true
   },
@@ -71,12 +101,24 @@ const resourceSchema = new mongoose.Schema({
   // User who last updated the resource
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'User'
   },
   
   // User who used/voided the resource
   actionBy: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'User'
   },
   

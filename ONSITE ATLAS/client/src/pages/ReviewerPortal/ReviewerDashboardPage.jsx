@@ -1,6 +1,6 @@
 // Test change for Git
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation, useParams } from 'react-router-dom';
 import reviewerService from '../../services/reviewerService';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -12,8 +12,12 @@ const ReviewerDashboardPage = () => {
   const [error, setError] = useState('');
   const auth = useAuth();
   const { user, currentEventId } = useAuth();
+  const { eventId: urlEventId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // Use URL eventId as priority, fallback to AuthContext eventId
+  const activeEventId = urlEventId || currentEventId;
   const [activeTab, setActiveTab] = useState('pending'); // 'pending', 'revisions', 'completed'
   const [activeRevisionSubTab, setActiveRevisionSubTab] = useState('awaitingAuthor'); // 'awaitingAuthor', 'needsRereview'
   const [searchTerm, setSearchTerm] = useState('');
@@ -22,9 +26,9 @@ const ReviewerDashboardPage = () => {
 
   useEffect(() => {
     const fetchAssignedAbstracts = async () => {
-      if (!currentEventId) {
+      if (!activeEventId) {
         setError('No active event selected. Please log in via an event-specific reviewer portal link.');
-        console.warn('[ReviewerDashboardPage] currentEventId is not set in AuthContext. Abstracts will not be loaded.');
+        console.warn('[ReviewerDashboardPage] activeEventId is not available. Abstracts will not be loaded.');
         setLoading(false);
         setAssignedAbstracts([]);
         return;
@@ -32,7 +36,7 @@ const ReviewerDashboardPage = () => {
       setLoading(true);
       setError('');
       try {
-        const response = await reviewerService.getAssignedAbstracts(currentEventId);
+        const response = await reviewerService.getAssignedAbstracts(activeEventId);
         if (response.success) {
           let abstractsData = response.data;
           if (location.state?.reviewedAbstractId && location.state?.newStatus) {
@@ -60,27 +64,27 @@ const ReviewerDashboardPage = () => {
       setLoading(false);
     };
 
-    if (user && currentEventId) {
+    if (user && activeEventId) {
       fetchAssignedAbstracts();
     } else if (!user) {
       setLoading(false);
-    } else if (user && !currentEventId) {
+    } else if (user && !activeEventId) {
       setLoading(false);
       setAssignedAbstracts([]);
       setError('No event context. Please log in via an event-specific reviewer portal link.');
     }
-  }, [user, currentEventId, auth, navigate, location]);
+  }, [user, activeEventId, auth, navigate, location]);
 
   const handleLogout = async () => {
     try {
-      const eventIdForRedirect = currentEventId; // Capture eventId before logout
+      const eventIdForRedirect = activeEventId; // Capture eventId before logout
       await auth.logout();
       toast.success('Logged out successfully!');
       if (eventIdForRedirect) {
         navigate(`/portal/reviewer/${eventIdForRedirect}`);
       } else {
         // Fallback if eventId was somehow not available
-        console.warn('[ReviewerDashboardPage] currentEventId was not available before logout. Falling back to generic login.');
+        console.warn('[ReviewerDashboardPage] activeEventId was not available before logout. Falling back to generic login.');
       navigate('/reviewer/login');
       }
     } catch (e) {
@@ -90,7 +94,7 @@ const ReviewerDashboardPage = () => {
   };
 
   const handleDownloadAbstractFiles = async () => {
-    if (!currentEventId) {
+    if (!activeEventId) {
       toast.error('No active event selected. Cannot download files.');
       return;
     }
@@ -101,12 +105,12 @@ const ReviewerDashboardPage = () => {
 
     setIsDownloadingFiles(true);
     try {
-      const response = await reviewerService.downloadAssignedAbstractFiles(currentEventId);
+      const response = await reviewerService.downloadAssignedAbstractFiles(activeEventId);
 
       if (response.success && response.data?.fileUrl) {
         const link = document.createElement('a');
         link.href = response.data.fileUrl;
-        link.setAttribute('download', response.data.filename || `reviewer_abstract_files_${currentEventId}.zip`);
+        link.setAttribute('download', response.data.filename || `reviewer_abstract_files_${activeEventId}.zip`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -124,7 +128,7 @@ const ReviewerDashboardPage = () => {
   };
 
   const handleExportAbstractDetails = async () => {
-    if (!currentEventId) {
+    if (!activeEventId) {
       toast.error('No active event selected. Cannot export details.');
       return;
     }
@@ -135,12 +139,12 @@ const ReviewerDashboardPage = () => {
 
     setIsExportingDetails(true);
     try {
-      const response = await reviewerService.exportAssignedAbstractDetails(currentEventId);
+      const response = await reviewerService.exportAssignedAbstractDetails(activeEventId);
 
       if (response.success && response.data?.fileUrl) {
         const link = document.createElement('a');
         link.href = response.data.fileUrl;
-        link.setAttribute('download', response.data.filename || `reviewer_abstract_details_${currentEventId}.csv`);
+        link.setAttribute('download', response.data.filename || `reviewer_abstract_details_${activeEventId}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -281,7 +285,7 @@ const ReviewerDashboardPage = () => {
           return (
             <li key={abstract._id} className="bg-white shadow-lg rounded-lg overflow-hidden hover:shadow-xl transition-shadow duration-300">
               <Link 
-                to={`/reviewer/abstract/${abstract._id}/review`} 
+                to={activeEventId ? `/reviewer/${activeEventId}/abstract/${abstract._id}/review` : `/reviewer/abstract/${abstract._id}/review`}
                 state={{ eventId: eventId }}
                 className="block group"
               >

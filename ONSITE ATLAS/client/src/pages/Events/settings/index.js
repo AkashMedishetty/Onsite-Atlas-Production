@@ -7,4 +7,6 @@ export { default as EmailTab } from './EmailTab';
 export { default as PaymentTab } from './PaymentTab';
 export { default as CategoriesTab } from './CategoriesTab';
 export { default as SettingsTab } from './SettingsTab';
-export { default as ScheduleTab } from './ScheduleTab'; 
+export { default as ScheduleTab } from './ScheduleTab';
+export { default as PricingRulesTab } from './PricingRulesTab';
+export { default as WorkshopsTab } from './WorkshopsTab'; 

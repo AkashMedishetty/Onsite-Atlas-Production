@@ -2,7 +2,7 @@ const express = require('express');
 // Enable mergeParams to access parameters from parent routers (like :eventId)
 // When mounted under /events/:eventId, this router will have access to req.params.eventId
 const router = express.Router({ mergeParams: true });
-const { protect } = require('../middleware/auth.middleware');
+const { protect, restrict } = require('../middleware/auth.middleware');
 const {
   getRegistrations,
   getRegistrationById,
@@ -14,6 +14,7 @@ const {
   getRegistrationsCount,
   exportRegistrationsController
 } = require('../controllers/registration.controller');
+const registrationController = require('../controllers/registration.controller');
 
 // Routes for registrations specific to an event (mounted under /events/:eventId/registrations)
 router.route('/')
@@ -53,5 +54,14 @@ router.route('/:registrationId/check-in') // Use :registrationId
 // Bulk import - Should likely be under eventId context, now at /import
 // router.route('/import')
 //   .post(protect, importRegistrations);
+
+router.post('/:registrationId/send-payment-link', protect, restrict('admin','staff'), registrationController.sendPaymentLink);
+
+// Resource blocking routes
+const resourceBlockingRoutes = require('./resourceBlocking.routes');
+router.use('/:registrationId/resource-blocks', resourceBlockingRoutes);
+
+// Get resource usage for a specific registration
+router.get('/:registrationId/resource-usage', protect, restrict('admin','staff','organizer'), registrationController.getRegistrationResourceUsage);
 
 module.exports = router; 

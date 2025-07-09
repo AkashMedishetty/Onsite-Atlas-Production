@@ -88,12 +88,50 @@ const updateAbstract = [
 /**
  * Schema for updating abstract status
  */
-const updateStatus = []; // Placeholder
+const updateStatus = [
+  param('id')
+    .custom(isValidObjectId).withMessage('Invalid Abstract ID'),
+  body('status')
+    .trim()
+    .notEmpty().withMessage('Status is required')
+    .isIn(['submitted', 'under_review', 'accepted', 'rejected', 'revision_requested', 'revised', 'withdrawn'])
+    .withMessage('Invalid status value'),
+  body('reviewerComments')
+    .optional()
+    .trim()
+    .isLength({ max: 1000 }).withMessage('Reviewer comments cannot exceed 1000 characters'),
+  body('reviewScore')
+    .optional()
+    .isInt({ min: 1, max: 10 }).withMessage('Review score must be between 1 and 10'),
+  body('rejectionReason')
+    .optional()
+    .trim()
+    .isLength({ max: 500 }).withMessage('Rejection reason cannot exceed 500 characters')
+];
 
 /**
  * Schema for adding a comment
  */
-const addComment = []; // Placeholder
+const addComment = [
+  param('id')
+    .custom(isValidObjectId).withMessage('Invalid Abstract ID'),
+  body('text')
+    .trim()
+    .notEmpty().withMessage('Comment text is required')
+    .isLength({ min: 1, max: 1000 }).withMessage('Comment must be between 1 and 1000 characters'),
+  body('visibility')
+    .optional()
+    .trim()
+    .isIn(['public', 'reviewer', 'internal'])
+    .withMessage('Visibility must be one of: public, reviewer, internal'),
+  body('isInternal')
+    .optional()
+    .isBoolean().withMessage('isInternal must be a boolean'),
+  body('priority')
+    .optional()
+    .isIn(['low', 'medium', 'high', 'urgent'])
+    .withMessage('Priority must be one of: low, medium, high, urgent')
+];
 
 module.exports = {
   createAbstract,

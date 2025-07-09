@@ -6,7 +6,8 @@ const {
   getDashboard,
   updateDashboardLayout,
   getWidgetData,
-  getEventDashboard
+  getEventDashboard,
+  getGlobalDashboard
 } = require('../controllers/dashboard.controller');
 
 // Get available dashboard widgets
@@ -23,5 +24,8 @@ router.get('/events/:eventId/widgets/:widgetId/data', protect, getWidgetData);
 
 // Event dashboard endpoint 
 router.get('/events/:id/dashboard', protect, getEventDashboard);
+
+// Global dashboard endpoint (admin only)
+router.get('/global', protect, getGlobalDashboard);
 
 module.exports = router; 

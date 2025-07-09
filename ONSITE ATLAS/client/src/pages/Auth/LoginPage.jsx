@@ -58,15 +58,17 @@ const LoginPage = () => {
     try {
       console.log('Attempting login with:', { email: formData.email });
       
-      // Call the login function from AuthContext
-      const user = await login(formData.email, formData.password);
+      // Store the intended destination for AuthContext to use
+      if (from && from !== '/') {
+        localStorage.setItem('redirectAfterLogin', from);
+      }
+      
+      // Call the login function from AuthContext with admin/default context
+      const user = await login(formData.email, formData.password, null, 'admin');
       
       console.log('Login successful, user:', user);
-      console.log('Navigating to:', from);
-      
-      // On successful login (no error thrown by login function),
-      // navigate to the intended destination or dashboard.
-      navigate(from, { replace: true });
+      // AuthContext will handle the redirect automatically
+      // No need to manually navigate here
       
     } catch (err) {
       console.error('Login failed in component:', err);

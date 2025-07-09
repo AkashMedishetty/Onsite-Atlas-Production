@@ -3,6 +3,7 @@ const { LandingPage, Event } = require('../models');
 // const { ApiError } = require('../utils/ApiError'); // Remove this
 const { createApiError } = require('../middleware/error'); // Import createApiError
 const asyncHandler = require('../middleware/async');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 /**
  * Get all landing pages for an event

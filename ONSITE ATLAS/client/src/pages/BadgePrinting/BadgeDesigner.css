@@ -126,11 +126,81 @@
   .element-palette {
     grid-template-columns: repeat(2, 1fr);
   }
+  
+  .badge-designer-main-row {
+    flex-direction: column;
+    height: auto;
+  }
+  
+  .badge-designer-left-sidebar,
+  .badge-designer-right-sidebar {
+    width: 100%;
+    max-height: 300px;
+    order: 2;
+  }
+  
+  .badge-designer-canvas-area {
+    order: 1;
+    min-height: 400px;
+  }
 }
 
 @media (max-width: 768px) {
   .badge-designer {
     padding: 10px;
+  }
+  
+  .badge-designer-container {
+    height: auto;
+  }
+  
+  .badge-designer-main-row {
+    flex-direction: column;
+  }
+  
+  .badge-designer-left-sidebar,
+  .badge-designer-right-sidebar {
+    width: 100%;
+    max-height: 250px;
+    padding: 0.5rem;
+  }
+  
+  .badge-preview-wrapper .card-body {
+    padding: 1rem;
+    min-height: 300px;
+  }
+  
+  /* Mobile-specific zoom controls */
+  .zoom-controls {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  .zoom-controls .btn {
+    min-width: 80px;
+  }
+  
+  /* Smaller badge elements on mobile */
+  .badge-element {
+    min-width: 20px;
+    min-height: 15px;
+  }
+}
+
+@media (max-width: 576px) {
+  .badge-designer-left-sidebar,
+  .badge-designer-right-sidebar {
+    padding: 0.25rem;
+  }
+  
+  .designer-panel-card .card-header {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+  }
+  
+  .badge-preview-wrapper .card-body {
+    padding: 0.5rem;
+    min-height: 250px;
   }
 }
 

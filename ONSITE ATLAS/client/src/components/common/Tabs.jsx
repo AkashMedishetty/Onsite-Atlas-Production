@@ -104,7 +104,7 @@ const Tabs = ({
       // Set local state first
       setActiveTab(index);
       
-      // Then call parent onChange handler
+      // Then call parent onChange handler synchronously
       if (onChange) {
         // Log before calling onChange
         console.log(`Tabs: Calling onChange with index ${index}`);
@@ -112,10 +112,8 @@ const Tabs = ({
         // If tabs have value property, use that instead of index
         const tabValue = tabs[index]?.value !== undefined ? tabs[index].value : index;
         
-        // Ensure onChange is called in the next tick to avoid potential state issues
-        setTimeout(() => {
-          onChange(tabValue);
-        }, 0);
+        // Call onChange synchronously - no setTimeout needed
+        onChange(tabValue);
       }
     } else {
       // If index is a string/value, find the matching tab index
@@ -124,9 +122,8 @@ const Tabs = ({
         setActiveTab(tabIndex);
         if (onChange) {
           console.log(`Tabs: Calling onChange with string value ${index}`);
-          setTimeout(() => {
-            onChange(index);
-          }, 0);
+          // Call onChange synchronously - no setTimeout needed
+          onChange(index);
         }
       }
     }

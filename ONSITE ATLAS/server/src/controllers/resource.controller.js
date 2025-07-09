@@ -1,13 +1,7 @@
 const mongoose = require('mongoose');
-const Resource = require('../models/Resource');
-const ResourceSetting = require('../models/ResourceSetting');
-const Event = require('../models/Event');
-const Registration = require('../models/Registration');
-const Abstract = require('../models/Abstract');
-const Workshop = require('../models/Workshop');
+const { Resource, ResourceSetting, Event, Registration, Abstract, Workshop, Category } = require('../models');
 const { createApiError } = require('../middleware/error');
 const asyncHandler = require('../middleware/async');
-const Category = require('../models/Category');
 const { sendSuccess, sendPaginated } = require('../utils/responseFormatter');
 const logger = require('../utils/logger');
 const ExcelJS = require('exceljs');
@@ -300,6 +294,7 @@ exports.updateResourceSettings = asyncHandler(async (req, res, next) => {
        // --- PATCH: Auto-assign ObjectId to kitBag items and certificate types if missing ---
    // For kitBag: Only assign a new _id if missing or invalid, and mark as modified so Mongoose saves the change
    const { Types } = require('mongoose');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
    if (dbType === 'kitBag' && resourceSettingsDoc.settings && Array.isArray(resourceSettingsDoc.settings.items)) {
      resourceSettingsDoc.settings.items = resourceSettingsDoc.settings.items.map(item => {
        // Only generate a new _id if missing or invalid; preserve existing valid _id
@@ -1245,7 +1240,7 @@ exports.getRecentScans = asyncHandler(async (req, res, next) => {
           .lean();
         foodSettings = settingDoc?.settings || null;
         _foodSettingsCache.set(eventId, { data: foodSettings, expires: Date.now() + 5 * 60 * 1000 }); // 5-min TTL
-      } catch (err) {
+      } catch (error) {
         console.error('[getRecentScans] Error fetching food settings:', err.message);
       }
     }
@@ -1311,7 +1306,7 @@ exports.getRecentScans = asyncHandler(async (req, res, next) => {
         if (item.id) kitMap[item.id.toString ? item.id.toString() : item.id] = item.name;
         kitMap[item.name] = item.name;
       });
-    } catch (err) {
+    } catch (error) {
       console.error('[getRecentScans] Error fetching kit settings:', err.message);
     }
   }
@@ -1338,7 +1333,7 @@ exports.getRecentScans = asyncHandler(async (req, res, next) => {
         const key = (tpl._id || tpl.id || tpl.name).toString();
         certMap[key] = tpl.name;
       });
-    } catch (err) {
+    } catch (error) {
       console.error('[getRecentScans] Error fetching certificate settings:', err.message);
     }
   }
@@ -2112,7 +2107,7 @@ exports.generateCertificatePdf = asyncHandler(async (req, res, next) => {
         try {
                 // Always scale background to full A4 landscape
                 doc.image(absoluteBackgroundPath, 0, 0, { width: PAGE_WIDTH, height: PAGE_HEIGHT });
-        } catch (bgImgError) {
+        } catch (error) {
             logger.error(`[generateCertificatePdf] Error processing background image at ${absoluteBackgroundPath}: ${bgImgError.message}`, { stack: bgImgError.stack });
             doc.fontSize(12).text(`Error: Could not process certificate background image. Path: ${absoluteBackgroundPath}. Details: ${bgImgError.message}. Please contact support.`, 50, 50);
             doc.end();
@@ -2142,7 +2137,7 @@ exports.generateCertificatePdf = asyncHandler(async (req, res, next) => {
             }
             try {
                  doc.font(fontName);
-            } catch (e) {
+            } catch (error) {
                 logger.warn(`Failed to set font: ${fontName} for field ${field.label}. Defaulting to Helvetica.`);
                 doc.font('Helvetica');
             }
@@ -2252,7 +2247,7 @@ async function getDataSourceValue(dataSource, registration, event, abstractData,
     }
     // Fallback: return empty string
     return '';
-  } catch (err) {
+  } catch (error) {
     logger.warn(`[getDataSourceValue] Failed to resolve dataSource '${dataSource}': ${err.message}`);
     return '';
   }
@@ -2260,7 +2255,6 @@ async function getDataSourceValue(dataSource, registration, event, abstractData,
 
 // Utility: Ensure all categories for an event have entitlements for all meals
 async function ensureMealEntitlementsForAllCategories(eventId, meals) {
-  const Category = require('../models/Category');
   const categories = await Category.find({ event: eventId });
   const validMealIds = new Set(meals.map(m => m._id.toString()));
   for (const category of categories) {
@@ -2443,7 +2437,7 @@ async function scanResource(req, res, next) {
       success: true,
       data: upsertResult.value
     });
-  } catch(err){
+  } catch (error) {
     next(err);
   }
 }

@@ -3,6 +3,7 @@ const ErrorResponse = require('../utils/errorResponse');
 const asyncHandler = require('../middleware/async');
 const jwt = require('jsonwebtoken');
 const logger = require('../config/logger');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 /**
  * @desc    Login as a registrant using registration ID and mobile number

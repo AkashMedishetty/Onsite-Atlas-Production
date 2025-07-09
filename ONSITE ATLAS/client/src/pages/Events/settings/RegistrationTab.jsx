@@ -5,7 +5,7 @@ import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 
 // Draggable field component
-const DraggableField = ({ id, index, field, moveField, editField, removeField }) => {
+const DraggableField = ({ id, index, field, moveField, editField, removeField, isAccompanying }) => {
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'FIELD',
     item: { id, index },
@@ -80,7 +80,9 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
       buttonText: 'Submit Registration',
       successMessage: 'Registration successful! Thank you for registering.',
       showSocialShare: true
-    }
+    },
+    accompanyingPersonFields: [],
+    accompanyingPersonsEnabled: false
   });
 
   const [editingField, setEditingField] = useState(null);
@@ -96,6 +98,18 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
   const [newOption, setNewOption] = useState('');
   const [activeSection, setActiveSection] = useState('fields');
   const [showFieldModal, setShowFieldModal] = useState(false);
+  const [editingAccompanyingField, setEditingAccompanyingField] = useState(null);
+  const [newAccompanyingField, setNewAccompanyingField] = useState({
+    name: '',
+    label: '',
+    type: 'text',
+    required: false,
+    placeholder: '',
+    options: [],
+    description: ''
+  });
+  const [newAccompanyingOption, setNewAccompanyingOption] = useState('');
+  const [showAccompanyingFieldModal, setShowAccompanyingFieldModal] = useState(false);
 
   // Initialize settings from the event data
   useEffect(() => {
@@ -381,6 +395,170 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
     }
   };
 
+  // Move a field (for drag and drop)
+  const moveAccompanyingField = (fromIndex, toIndex) => {
+    const updatedFields = [...registrationSettings.accompanyingPersonFields];
+    const [movedField] = updatedFields.splice(fromIndex, 1);
+    updatedFields.splice(toIndex, 0, movedField);
+    
+    setRegistrationSettings({
+      ...registrationSettings,
+      accompanyingPersonFields: updatedFields
+    });
+    
+    const updatedEvent = {
+      ...event,
+      registrationSettings: {
+        ...event.registrationSettings,
+        accompanyingPersonFields: updatedFields
+      }
+    };
+    
+    setEvent(updatedEvent);
+    setFormChanged(true);
+  };
+
+  // Prepare to edit a field
+  const editAccompanyingField = (index) => {
+    setEditingAccompanyingField(index);
+    const field = registrationSettings.accompanyingPersonFields[index] || {};
+    setNewAccompanyingField({
+      name: field.name || '',
+      label: typeof field.label === 'string' ? field.label : '',
+      type: field.type || 'text',
+      required: typeof field.isRequired === 'boolean' ? field.isRequired : (typeof field.required === 'boolean' ? field.required : false),
+      placeholder: typeof field.placeholder === 'string' ? field.placeholder : '',
+      options: Array.isArray(field.options) ? field.options : [],
+      description: typeof field.description === 'string' ? field.description : ''
+    });
+    setShowAccompanyingFieldModal(true);
+  };
+
+  // Add a custom field
+  const addAccompanyingField = () => {
+    const fieldId = `field_${Date.now()}`;
+    const finalField = {
+      ...newAccompanyingField,
+      id: fieldId,
+      name: newAccompanyingField.name || `field_${fieldId}`,
+    };
+    let updatedFields;
+    if (editingAccompanyingField !== null) {
+      // Update existing field
+      updatedFields = [...registrationSettings.accompanyingPersonFields];
+      updatedFields[editingAccompanyingField] = finalField;
+    } else {
+      // Add new field
+      updatedFields = [...registrationSettings.accompanyingPersonFields, finalField];
+    }
+    // Update config after custom field change
+    const updatedSettings = {
+      ...registrationSettings,
+      accompanyingPersonFields: updatedFields
+    };
+    const { requiredFields, visibleFields, fieldOrder } = updateFieldConfig(updatedSettings);
+    setRegistrationSettings({
+      ...updatedSettings,
+      requiredFields,
+      visibleFields,
+      fieldOrder
+    });
+    const updatedEvent = {
+      ...event,
+      registrationSettings: {
+        ...event.registrationSettings,
+        ...updatedSettings,
+        requiredFields,
+        visibleFields,
+        fieldOrder
+      }
+    };
+    setEvent(updatedEvent);
+    setFormChanged(true);
+    // Reset form
+    setNewAccompanyingField({
+      name: '',
+      label: '',
+      type: 'text',
+      required: false,
+      placeholder: '',
+      options: [],
+      description: ''
+    });
+    setEditingAccompanyingField(null);
+    setShowAccompanyingFieldModal(false);
+  };
+
+  // Add option to a select/radio/checkbox field
+  const addAccompanyingOption = () => {
+    if (!newAccompanyingOption.trim()) return;
+    
+    setNewAccompanyingField({
+      ...newAccompanyingField,
+      options: [...newAccompanyingField.options, newAccompanyingOption.trim()]
+    });
+    
+    setNewAccompanyingOption('');
+  };
+
+  // Remove option from a select/radio/checkbox field
+  const removeAccompanyingOption = (index) => {
+    const updatedOptions = [...newAccompanyingField.options];
+    updatedOptions.splice(index, 1);
+    
+    setNewAccompanyingField({
+      ...newAccompanyingField,
+      options: updatedOptions
+    });
+  };
+
+  // Remove a custom field
+  const removeAccompanyingField = (index) => {
+    const updatedFields = [...registrationSettings.accompanyingPersonFields];
+    updatedFields.splice(index, 1);
+    // Update config after custom field removal
+    const updatedSettings = {
+      ...registrationSettings,
+      accompanyingPersonFields: updatedFields
+    };
+    const { requiredFields, visibleFields, fieldOrder } = updateFieldConfig(updatedSettings);
+    setRegistrationSettings({
+      ...updatedSettings,
+      requiredFields,
+      visibleFields,
+      fieldOrder
+    });
+    const updatedEvent = {
+      ...event,
+      registrationSettings: {
+        ...event.registrationSettings,
+        ...updatedSettings,
+        requiredFields,
+        visibleFields,
+        fieldOrder
+      }
+    };
+    setEvent(updatedEvent);
+    setFormChanged(true);
+  };
+
+  // Handle field input changes
+  const handleAccompanyingFieldChange = (eOrValue, meta) => {
+    if (eOrValue && eOrValue.target) {
+      const { name, value, type, checked } = eOrValue.target;
+      setNewAccompanyingField({
+        ...newAccompanyingField,
+        [name]: type === 'checkbox' ? checked : value
+      });
+    } else if (meta && meta.name) {
+      const { name } = meta;
+      setNewAccompanyingField({
+        ...newAccompanyingField,
+        [name]: eOrValue
+      });
+    }
+  };
+
   // Field type options
   const fieldTypeOptions = [
     { value: 'text', label: 'Text' },
@@ -584,6 +762,103 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
                   )}
                 </div>
               </DndProvider>
+            </div>
+          </Card>
+
+          {/* Accompanying Person Fields Section */}
+          <Card title="Accompanying Person Fields">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700">Accompanying Person Form Builder</h4>
+                  <p className="text-xs text-gray-500">Configure fields for accompanying persons. Drag and drop to reorder.</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEditingAccompanyingField(null);
+                    setNewAccompanyingField({
+                      name: '',
+                      label: '',
+                      type: 'text',
+                      required: false,
+                      placeholder: '',
+                      options: [],
+                      description: ''
+                    });
+                    setShowAccompanyingFieldModal(true);
+                  }}
+                  leftIcon={<PlusIcon className="h-4 w-4" />}
+                >
+                  Add Field
+                </Button>
+              </div>
+              <DndProvider backend={HTML5Backend}>
+                <div className="space-y-2">
+                  {registrationSettings.accompanyingPersonFields?.length === 0 ? (
+                    <div className="bg-gray-50 p-8 text-center rounded-lg border border-dashed border-gray-300">
+                      <p className="text-gray-500">No accompanying person fields added yet.</p>
+                      <p className="text-sm text-gray-400 mt-1">Click "Add Field" to create your first field for accompanying persons.</p>
+                    </div>
+                  ) : (
+                    registrationSettings.accompanyingPersonFields.map((field, index) => (
+                      <DraggableField
+                        key={field.id || index}
+                        id={field.id || index}
+                        index={index}
+                        field={field}
+                        moveField={moveAccompanyingField}
+                        editField={editAccompanyingField}
+                        removeField={removeAccompanyingField}
+                        isAccompanying
+                      />
+                    ))
+                  )}
+                </div>
+              </DndProvider>
+            </div>
+          </Card>
+
+          <Card title="Accompanying Person Settings">
+            <div className="space-y-4">
+              <Switch
+                label="Enable Accompanying Persons"
+                checked={registrationSettings.accompanyingPersonsEnabled || (event.accompanyingPersonSettings?.maxAllowed > 0)}
+                onChange={checked => {
+                  const maxAllowed = checked ? 1 : 0;
+                  setRegistrationSettings({
+                    ...registrationSettings,
+                    accompanyingPersonsEnabled: checked
+                  });
+                  setEvent({
+                    ...event,
+                    accompanyingPersonSettings: {
+                      ...event.accompanyingPersonSettings,
+                      maxAllowed
+                    }
+                  });
+                  setFormChanged(true);
+                }}
+              />
+              <Input
+                type="number"
+                label="Maximum Accompanying Persons Allowed"
+                value={event.accompanyingPersonSettings?.maxAllowed || 0}
+                min={0}
+                onChange={e => {
+                  const value = parseInt(e.target.value, 10) || 0;
+                  setEvent({
+                    ...event,
+                    accompanyingPersonSettings: {
+                      ...event.accompanyingPersonSettings,
+                      maxAllowed: value
+                    }
+                  });
+                  setFormChanged(true);
+                }}
+                disabled={!(registrationSettings.accompanyingPersonsEnabled || (event.accompanyingPersonSettings?.maxAllowed > 0))}
+              />
             </div>
           </Card>
         </div>
@@ -853,6 +1128,123 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
                 disabled={!newField.label}
               >
                 {editingField !== null ? 'Update Field' : 'Add Field'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Accompanying Person Field Modal */}
+      {showAccompanyingFieldModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full">
+            <div className="p-6 border-b border-gray-200">
+              <h3 className="text-lg font-medium">
+                {editingAccompanyingField !== null ? 'Edit Accompanying Person Field' : 'Add New Accompanying Person Field'}
+              </h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input
+                  label="Field Label"
+                  name="label"
+                  value={newAccompanyingField.label}
+                  onChange={handleAccompanyingFieldChange}
+                  placeholder="e.g., Age"
+                  required
+                />
+                <Input
+                  label="Field Name (ID)"
+                  name="name"
+                  value={newAccompanyingField.name}
+                  onChange={handleAccompanyingFieldChange}
+                  placeholder="e.g., age"
+                />
+                <Select
+                  label="Field Type"
+                  name="type"
+                  value={newAccompanyingField.type}
+                  onChange={handleAccompanyingFieldChange}
+                  options={fieldTypeOptions}
+                />
+                <div className="flex items-center pt-6">
+                  <Switch
+                    label="Required Field"
+                    name="required"
+                    checked={newAccompanyingField.required}
+                    onChange={(checked) => handleAccompanyingFieldChange({ target: { name: 'required', checked, type: 'checkbox' } })}
+                  />
+                </div>
+              </div>
+              <Input
+                label="Placeholder Text"
+                name="placeholder"
+                value={newAccompanyingField.placeholder}
+                onChange={handleAccompanyingFieldChange}
+                placeholder="Enter placeholder text"
+              />
+              <Textarea
+                label="Field Description"
+                name="description"
+                value={newAccompanyingField.description}
+                onChange={handleAccompanyingFieldChange}
+                placeholder="Explain this field to the user"
+                rows={2}
+              />
+              {['select', 'radio', 'checkbox'].includes(newAccompanyingField.type) && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Options</label>
+                  <div className="space-y-2">
+                    {newAccompanyingField.options.map((option, index) => (
+                      <div key={index} className="flex items-center">
+                        <input
+                          type="text"
+                          value={option}
+                          readOnly
+                          className="flex-1 border-gray-300 rounded-l-md focus:ring-primary-500 focus:border-primary-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeAccompanyingOption(index)}
+                          className="bg-red-100 border border-red-300 border-l-0 rounded-r-md px-3 py-2 hover:bg-red-200"
+                        >
+                          <TrashIcon className="h-4 w-4 text-red-500" />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="flex mt-2">
+                      <input
+                        type="text"
+                        value={newAccompanyingOption}
+                        onChange={(e) => setNewAccompanyingOption(e.target.value)}
+                        placeholder="Add new option"
+                        className="flex-1 border-gray-300 rounded-l-md focus:ring-primary-500 focus:border-primary-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={addAccompanyingOption}
+                        className="bg-green-100 border border-green-300 border-l-0 rounded-r-md px-3 py-2 hover:bg-green-200"
+                      >
+                        <PlusIcon className="h-4 w-4 text-green-600" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="p-6 bg-gray-50 border-t border-gray-200 flex justify-end space-x-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowAccompanyingFieldModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={addAccompanyingField}
+                disabled={!newAccompanyingField.label}
+              >
+                {editingAccompanyingField !== null ? 'Update Field' : 'Add Field'}
               </Button>
             </div>
           </div>

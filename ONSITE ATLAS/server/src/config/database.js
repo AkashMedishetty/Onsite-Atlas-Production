@@ -87,25 +87,54 @@ const connectDB = async () => {
       logger.error('Could not reach MongoDB Atlas. Check your internet connection and the hostname.');
     }
     
-    // Use a simple mock for development
-    console.log('Unable to connect to MongoDB. The server will run with limited functionality.');
+    // Check if we should fail fast or run in offline mode
+    const ALLOW_OFFLINE_MODE = process.env.ALLOW_OFFLINE_MODE === 'true';
     
-    // Set up a mock connection object
-    mongoose.connection.db = {
-      collection: () => ({
-        find: () => ({ toArray: () => Promise.resolve([]) }),
-        findOne: () => Promise.resolve(null),
-        insertOne: () => Promise.resolve({ insertedId: 'mock-id' }),
-        updateOne: () => Promise.resolve({ modifiedCount: 1 }),
-        deleteOne: () => Promise.resolve({ deletedCount: 1 }),
-      })
-    };
-    
-    // Return a mock connection to allow the server to start
-    return { connection: { host: 'mock-db' } };
+    if (ALLOW_OFFLINE_MODE) {
+      console.warn('RUNNING IN OFFLINE MODE: Database operations will be disabled');
+      logger.warn('Server running in offline mode - database operations disabled');
+      
+      // Set a flag to indicate offline mode
+      global.OFFLINE_MODE = true;
+      
+      // Return null to indicate no database connection
+      // Controllers should check for this and handle accordingly
+      return null;
+    } else {
+      // Fail fast - don't start the server without a database connection
+      console.error('CRITICAL: Cannot start server without database connection');
+      console.error('Set ALLOW_OFFLINE_MODE=true environment variable to run in offline mode');
+      logger.error('Server startup failed - cannot connect to database');
+      
+      // Re-throw the error to prevent server startup
+      throw new Error(`Database connection failed: ${error.message}`);
+    }
   } finally {
     console.log('=== DATABASE CONNECT FUNCTION COMPLETED ===');
   }
 };
 
-module.exports = connectDB; 
+/**
+ * Check if the application is running in offline mode
+ * @returns {boolean} True if running in offline mode
+ */
+const isOfflineMode = () => {
+  return global.OFFLINE_MODE === true || mongoose.connection.readyState !== 1;
+};
+
+/**
+ * Ensure database is connected before executing operations
+ * @param {string} operationName - Name of the operation for logging
+ * @throws {Error} If database is not connected and not in offline mode
+ */
+const ensureConnected = (operationName = 'Database operation') => {
+  if (isOfflineMode()) {
+    throw new Error(`${operationName} failed: Application is running in offline mode`);
+  }
+  
+  if (mongoose.connection.readyState !== 1) {
+    throw new Error(`${operationName} failed: Database not connected`);
+  }
+};
+
+module.exports = { connectDB, isOfflineMode, ensureConnected }; 

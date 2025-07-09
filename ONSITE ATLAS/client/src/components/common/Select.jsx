@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDownIcon, ChevronUpIcon, CheckIcon } from '@heroicons/react/24/solid';
 import ReactDOM from 'react-dom';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const Select = forwardRef(({
   id,
@@ -39,6 +40,7 @@ const Select = forwardRef(({
   closeMenuOnSelect = true,
   ...props
 }, ref) => {
+  const { resolvedTheme } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const selectRef = useRef(null);
@@ -80,14 +82,34 @@ const Select = forwardRef(({
   
   // Variant styles
   const variantStyles = {
-    outline: `bg-white border ${error ? 'border-red-500 focus-within:ring-red-200' : 'border-gray-300 focus-within:border-blue-500 focus-within:ring-blue-200'} focus-within:ring-2 focus-within:ring-offset-0`,
-    filled: `bg-gray-100 border border-transparent ${error ? 'focus-within:bg-white focus-within:border-red-500 focus-within:ring-red-200' : 'focus-within:bg-white focus-within:border-blue-500 focus-within:ring-blue-200'} focus-within:ring-2 focus-within:ring-offset-0`,
-    flushed: `bg-transparent border-b rounded-none px-0 ${error ? 'border-red-500 focus-within:border-red-500' : 'border-gray-300 focus-within:border-blue-500'}`
+    outline: `${
+      resolvedTheme === 'dark' 
+        ? 'bg-gray-800 border' 
+        : 'bg-white border'
+    } ${
+      error 
+        ? 'border-red-500 focus-within:ring-red-200' 
+        : `${resolvedTheme === 'dark' ? 'border-gray-600' : 'border-gray-300'} focus-within:border-blue-500 focus-within:ring-blue-200`
+    } focus-within:ring-2 focus-within:ring-offset-0`,
+    filled: `${
+      resolvedTheme === 'dark' 
+        ? 'bg-gray-700' 
+        : 'bg-gray-100'
+    } border border-transparent ${
+      error 
+        ? `focus-within:${resolvedTheme === 'dark' ? 'bg-gray-800' : 'bg-white'} focus-within:border-red-500 focus-within:ring-red-200` 
+        : `focus-within:${resolvedTheme === 'dark' ? 'bg-gray-800' : 'bg-white'} focus-within:border-blue-500 focus-within:ring-blue-200`
+    } focus-within:ring-2 focus-within:ring-offset-0`,
+    flushed: `bg-transparent border-b rounded-none px-0 ${
+      error 
+        ? 'border-red-500 focus-within:border-red-500' 
+        : `${resolvedTheme === 'dark' ? 'border-gray-600' : 'border-gray-300'} focus-within:border-blue-500`
+    }`
   };
   
   // State-specific styles
   const stateStyles = `
-    ${disabled ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'cursor-pointer'}
+    ${disabled ? `opacity-50 cursor-not-allowed ${resolvedTheme === 'dark' ? 'bg-gray-700' : 'bg-gray-50'}` : 'cursor-pointer'}
   `;
   
   // Get selected option(s)
@@ -202,7 +224,7 @@ const Select = forwardRef(({
   const renderDisplayValue = () => {
     if (!hasSelectedOption) {
       return (
-        <span className="text-gray-400">
+        <span className={resolvedTheme === 'dark' ? 'text-gray-500' : 'text-gray-400'}>
           {placeholder}
         </span>
       );
@@ -211,7 +233,7 @@ const Select = forwardRef(({
     if (multiple) {
       if (selectedOption.length === 0) {
         return (
-          <span className="text-gray-400">
+          <span className={resolvedTheme === 'dark' ? 'text-gray-500' : 'text-gray-400'}>
             {placeholder}
           </span>
         );
@@ -236,7 +258,7 @@ const Select = forwardRef(({
     return formatOptionLabel 
       ? formatOptionLabel(selectedOption, false) 
       : (
-          <span className="truncate">
+          <span className={`truncate ${resolvedTheme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
             {getOptionLabel(selectedOption)}
           </span>
         );
@@ -249,8 +271,8 @@ const Select = forwardRef(({
         <motion.div
           ref={menuRef}
           className={`
-            absolute z-10 mt-1 w-full bg-white rounded-md shadow-lg max-h-60 overflow-auto focus:outline-none
-            py-1 text-base ring-1 ring-black ring-opacity-5
+            absolute z-10 mt-1 w-full ${resolvedTheme === 'dark' ? 'bg-gray-800' : 'bg-white'} rounded-md shadow-lg max-h-60 overflow-auto focus:outline-none
+            py-1 text-base ring-1 ${resolvedTheme === 'dark' ? 'ring-gray-600' : 'ring-black ring-opacity-5'}
             ${menuPlacement === 'top' ? 'bottom-full mb-1' : 'top-full'}
             ${variant === 'flushed' ? 'left-0' : ''}
             ${menuClassName}
@@ -266,14 +288,14 @@ const Select = forwardRef(({
         >
           {/* Search input */}
           {searchable && (
-            <div className="px-3 py-2 sticky top-0 bg-white border-b border-gray-100">
+            <div className={`px-3 py-2 sticky top-0 ${resolvedTheme === 'dark' ? 'bg-gray-800 border-b border-gray-600' : 'bg-white border-b border-gray-100'}`}>
               <input
                 ref={inputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search..."
-                className="w-full border-none text-sm focus:outline-none focus:ring-0 p-0"
+                className={`w-full border-none text-sm focus:outline-none focus:ring-0 p-0 bg-transparent ${resolvedTheme === 'dark' ? 'text-white placeholder-gray-400' : 'text-gray-900 placeholder-gray-500'}`}
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
@@ -281,7 +303,7 @@ const Select = forwardRef(({
           
           {/* No options message */}
           {filteredOptions.length === 0 ? (
-            <div className="text-gray-400 text-sm py-2 px-3">
+            <div className={`${resolvedTheme === 'dark' ? 'text-gray-500' : 'text-gray-400'} text-sm py-2 px-3`}>
               {noOptionsMessage}
             </div>
           ) : (
@@ -302,7 +324,13 @@ const Select = forwardRef(({
                   key={optionValue}
                   className={`
                     px-3 py-2 cursor-pointer flex items-center justify-between
-                    ${isSelected ? 'bg-blue-50 text-blue-800' : 'text-gray-900 hover:bg-gray-50'}
+                    ${isSelected 
+                      ? (resolvedTheme === 'dark' ? 'bg-blue-900 text-blue-200' : 'bg-blue-50 text-blue-800')
+                      : `${resolvedTheme === 'dark' 
+                          ? 'text-gray-200 hover:bg-gray-700' 
+                          : 'text-gray-900 hover:bg-gray-50'
+                        }`
+                    }
                     ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
                   `}
                   onClick={() => !isDisabled && handleOptionClick(option)}
@@ -344,7 +372,7 @@ const Select = forwardRef(({
       {label && (
         <label 
           htmlFor={id || name} 
-          className={`block mb-1.5 text-sm font-medium text-gray-700 ${labelClassName}`}
+          className={`block mb-1.5 text-sm font-medium ${resolvedTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'} ${labelClassName}`}
         >
           {label}
           {required && <span className="ml-1 text-red-500">*</span>}
@@ -430,7 +458,7 @@ const Select = forwardRef(({
       
       {/* Helper text */}
       {helperText && (
-        <p className={`mt-1 text-sm ${error ? 'text-red-500' : 'text-gray-500'}`}>
+        <p className={`mt-1 text-sm ${error ? 'text-red-500' : (resolvedTheme === 'dark' ? 'text-gray-400' : 'text-gray-500')}`}>
           {helperText}
         </p>
       )}

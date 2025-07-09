@@ -1,5 +1,5 @@
 const ExcelJS = require('exceljs');
-const { ApiError } = require('../middleware/errorHandler');
+const ApiError = require('./ApiError');
 const logger = require('./logger');
 
 /**

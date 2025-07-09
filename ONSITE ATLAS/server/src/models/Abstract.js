@@ -1,13 +1,20 @@
 const mongoose = require('mongoose');
+const validator = require('validator');
 
 const reviewCommentSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'User',
     required: true
   },
   comment: {
-    type: String,
+    type: String, trim: true,
     required: true
   },
   timestamp: {
@@ -19,45 +26,63 @@ const reviewCommentSchema = new mongoose.Schema({
 const abstractSchema = new mongoose.Schema({
   event: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'Event',
     required: true
   },
   registration: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'Registration',
     required: false
   },
   title: {
-    type: String,
+    type: String, trim: true,
     required: [true, 'Please provide a title for your abstract'],
     trim: true,
     maxlength: [200, 'Abstract title cannot exceed 200 characters']
   },
   authors: {
-    type: String,
+    type: String, trim: true,
     required: [true, 'Please provide the authors of the abstract'],
     trim: true
   },
   authorAffiliations: {
-    type: String,
+    type: String, trim: true,
     trim: true
   },
   category: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'Category', 
     required: false
   },
   topic: {
-    type: String,
+    type: String, trim: true,
     required: [true, 'Please select a topic for your abstract'],
     trim: true
   },
   subTopic: {
-    type: String,
+    type: String, trim: true,
     trim: true
   },
   content: {
-    type: String,
+    type: String, trim: true,
     required: [true, 'Please provide the content of your abstract'],
     trim: true,
     maxlength: [5000, 'Abstract content cannot exceed 5000 characters']
@@ -67,11 +92,11 @@ const abstractSchema = new mongoose.Schema({
     default: 0
   },
   fileUrl: {
-    type: String,
+    type: String, trim: true,
     required: false
   },
   fileName: {
-    type: String,
+    type: String, trim: true,
     required: false
   },
   fileSize: {
@@ -79,17 +104,23 @@ const abstractSchema = new mongoose.Schema({
     required: false
   },
   fileType: {
-    type: String,
+    type: String, trim: true,
     required: false
   },
   // Fields for author-account workflow ---------------------------------------
   author: {
     type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
     ref: 'AuthorUser',
     required: false,
   },
   externalRegId: {
-    type: String,
+    type: String, trim: true,
   },
   registrationProofUrl: String,
   registrationVerified: {
@@ -98,8 +129,14 @@ const abstractSchema = new mongoose.Schema({
   },
   finalFileUrl: String,
   finalStatus: {
-    type: String,
+    type: String, trim: true,
     enum: ['pending', 'submitted', 'under-review', 'approved', 'rejected'],
+        validate: {
+          validator: function(value) {
+            return !value || this.schema.path(this.$__.path).enumValues.includes(value);
+          },
+          message: 'Invalid enum value'
+        },
     default: 'pending',
   },
   submissionDate: {
@@ -111,20 +148,38 @@ const abstractSchema = new mongoose.Schema({
     default: Date.now
   },
   status: {
-    type: String,
+    type: String, trim: true,
     enum: ['draft', 'submitted', 'under-review', 'approved', 'rejected', 'revision-requested', 'pending', 'accepted', 'revised-pending-review'],
+        validate: {
+          validator: function(value) {
+            return !value || this.schema.path(this.$__.path).enumValues.includes(value);
+          },
+          message: 'Invalid enum value'
+        },
     default: 'submitted'
   },
   reviewComments: [reviewCommentSchema],
   // New fields for abstract submission workflow
   submissionPath: {
-    type: String,
+    type: String, trim: true,
     enum: ['post-registration', 'pre-registration'],
+        validate: {
+          validator: function(value) {
+            return !value || this.schema.path(this.$__.path).enumValues.includes(value);
+          },
+          message: 'Invalid enum value'
+        },
     default: 'post-registration'
   },
   submissionType: {
-    type: String,
+    type: String, trim: true,
     enum: ['oral', 'poster', 'workshop', 'other'],
+        validate: {
+          validator: function(value) {
+            return !value || this.schema.path(this.$__.path).enumValues.includes(value);
+          },
+          message: 'Invalid enum value'
+        },
     default: 'poster'
   },
   abstractNumber: String,
@@ -142,31 +197,61 @@ const abstractSchema = new mongoose.Schema({
   reviewDetails: {
     assignedTo: [{
       type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
       ref: 'User'
     }],
     reviews: [{
       reviewer: {
         type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
         ref: 'User'
       },
       score: Number,
       comments: String,
       decision: {
-        type: String,
-        enum: ['accept', 'reject', 'revise', 'undecided']
+        type: String, trim: true,
+        enum: ['accept', 'reject', 'revise', 'undecided'],
+        validate: {
+          validator: function(value) {
+            return !value || this.schema.path(this.$__.path).enumValues.includes(value);
+          },
+          message: 'Invalid enum value'
+        }
       },
       isComplete: Boolean,
       reviewedAt: Date
     }],
     finalDecision: {
-      type: String,
+      type: String, trim: true,
       enum: ['accepted', 'rejected', 'revision-requested', 'pending'],
+        validate: {
+          validator: function(value) {
+            return !value || this.schema.path(this.$__.path).enumValues.includes(value);
+          },
+          message: 'Invalid enum value'
+        },
       default: 'pending'
     },
     decisionReason: String,
     decisionDate: Date,
     decisionBy: {
       type: mongoose.Schema.Types.ObjectId,
+      validate: {
+        validator: function(id) {
+          return mongoose.Types.ObjectId.isValid(id);
+        },
+        message: 'Invalid ObjectId format'
+      },
       ref: 'User'
     },
     averageScore: Number
@@ -197,7 +282,7 @@ abstractSchema.pre('save', async function(next) {
       if (event) {
         this.abstractNumber = await generateAbstractNumber(event);
       }
-    } catch (err) {
+    } catch (error) {
       return next(err);
     }
   }

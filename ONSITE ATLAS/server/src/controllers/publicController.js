@@ -1,6 +1,7 @@
 const { LandingPage, Event } = require('../models');
 const asyncHandler = require('../middleware/async');
 const { ApiError } = require('../utils/ApiError');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 /**
  * Render landing page
@@ -74,9 +75,16 @@ exports.handleShortUrl = asyncHandler(async (req, res, next) => {
   });
 });
 
-// Get all public events
+// Get all public events (excludes archived and draft events)
 exports.getAllPublicEvents = asyncHandler(async (req, res, next) => {
-    const events = await Event.find({ isPublic: true, status: 'published' }).sort({ startDate: 1 });
+    const events = await Event.find({ 
+        isPublic: true, 
+        status: { $in: ['published', 'completed'] }, // Explicitly exclude archived and draft
+        $or: [
+            { status: { $ne: 'archived' } }, // Double-check: exclude archived
+            { status: { $exists: false } } // Handle events without status field
+        ]
+    }).sort({ startDate: 1 });
 
     res.status(200).json({
         status: 'success',
@@ -87,12 +95,15 @@ exports.getAllPublicEvents = asyncHandler(async (req, res, next) => {
     });
 });
 
-// Get a single public event by slug or ID
+// Get a single public event by slug or ID (excludes archived events)
 exports.getPublicEvent = asyncHandler(async (req, res, next) => {
     const event = await Event.findOne({
         $or: [{ slug: req.params.slugOrId }, { _id: req.params.slugOrId }],
         isPublic: true,
-        status: 'published'
+        status: { $in: ['published', 'completed'] }, // Explicitly exclude archived and draft
+        $and: [
+            { status: { $ne: 'archived' } } // Double-check: exclude archived
+        ]
     });
 
     if (!event) {

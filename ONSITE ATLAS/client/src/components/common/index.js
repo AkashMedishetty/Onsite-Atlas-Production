@@ -1,4 +1,4 @@
-export { default as GlobalSearch } from './GlobalSearch';
+export { default as GlobalSearch } from '../GlobalSearch';
 export { default as QRCodeGenerator } from './QRCodeGenerator';
 export { default as Badge } from './Badge';
 export { default as Alert, ErrorMessage } from './Alert';
@@ -19,4 +19,8 @@ export { default as BadgeTemplate } from './BadgeTemplate';
 export { default as Tooltip } from './Tooltip';
 export { default as Loading } from './Loading';
 export { default as QrScanner } from './QrScanner';
-export { default as ProgressBar } from './ProgressBar'; 
+export { default as ProgressBar } from './ProgressBar';
+export { default as DashboardStatsCard } from './DashboardStatsCard';
+export { default as ThemeToggle } from './ThemeToggle';
+export { default as UniversalSearch } from './UniversalSearch';
+export { default as NotificationPanel } from './NotificationPanel'; 

@@ -200,9 +200,11 @@ const MainLayout = () => {
               >
                 <BellIcon className="h-5 w-5" />
               </button>
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-                3
-              </span>
+              {/* {unreadNotificationCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                  {unreadNotificationCount}
+                </span>
+              )} */}
             </div>
             
             <div className="relative group">

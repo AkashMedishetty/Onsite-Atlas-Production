@@ -10,6 +10,7 @@ const { createCanvas, loadImage } = require('canvas');
 const PDFDocument = require('pdfkit');
 const asyncHandler = require('express-async-handler');
 const { sendSuccess } = require('../utils/responseFormatter');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 const emailService = require('../services/emailService');
 const { buildUploadDir } = require('../config/paths');
 const { createApiError } = require('../middleware/error');
@@ -27,7 +28,7 @@ const { processTemplate } = require('../services/emailService');
  * @access  Private
  */
 exports.sendEmail = asyncHandler(async (req, res) => {
-  console.log('[EMAIL SEND] Endpoint hit. req.body:', req.body, 'req.files:', req.files);
+  logger.info('[EMAIL SEND] Endpoint hit. req.body:', req.body, 'req.files:', req.files);
   const { eventId } = req.params;
   // express-fileupload: req.files.attachments can be a single file or array
   let attachments = [];
@@ -130,13 +131,46 @@ exports.sendEmail = asyncHandler(async (req, res) => {
     }
   });
 
-  // Create a record of this email batch
+  // Create a record of this email batch with enhanced tracking
+  const startTime = new Date();
   const emailBatch = {
     subject: email.subject,
-    date: new Date(),
+    date: startTime,
     recipients: recipients.length,
+    sent: 0,
+    failed: 0,
+    pending: recipients.length,
     status: 'pending',
-    attachments: attachments.map(f => ({ filename: f.filename, path: f.path }))
+    errors: [],
+    templateUsed: email.templateUsed || 'custom',
+    attachments: attachments.map(f => ({ 
+      filename: f.filename, 
+      originalName: f.originalname || f.filename,
+      size: f.size,
+      mimeType: f.mimetype
+    })),
+    filters: {
+      categories: req.body.categories || [],
+      registrationStatus: req.body.registrationStatus || [],
+      paymentStatus: req.body.paymentStatus || [],
+      audience: req.body.audience || [],
+      specificEmails: req.body.specificEmails || [],
+      workshops: req.body.workshops || []
+    },
+    sentBy: req.user._id,
+    sentByName: req.user.firstName + ' ' + req.user.lastName,
+    sentByEmail: req.user.email,
+    deliveryStats: {
+      opened: 0,
+      clicked: 0,
+      bounced: 0,
+      unsubscribed: 0
+    },
+    processingTime: {
+      startTime: startTime,
+      endTime: null,
+      durationMs: null
+    }
   };
 
   if (!event.emailHistory) {
@@ -171,8 +205,8 @@ exports.sendEmail = asyncHandler(async (req, res) => {
         try {
           const qrCodeDataUrl = await generateQRCode(recipient._id, event._id);
           emailBody = emailBody.replace('[QR_CODE]', `<img src="${qrCodeDataUrl}" alt="Registration QR Code" style="max-width: 200px; height: auto;" />`);
-        } catch (qrError) {
-          console.error('Error generating QR code:', qrError);
+        } catch (error) {
+          logger.error('Error generating QR code:', qrError);
           emailBody = emailBody.replace('[QR_CODE]', '[QR code could not be generated]');
         }
       } else {
@@ -200,17 +234,31 @@ exports.sendEmail = asyncHandler(async (req, res) => {
       sentCount++;
     } catch (error) {
       failedCount++;
-      errors.push({
-        email: recipient.personalInfo.email,
-        error: error.message
-      });
+      // Enhanced error tracking with more details
+      const errorEntry = {
+        email: recipient.personalInfo?.email || 'unknown',
+        error: error.message,
+        errorCode: error.code || 'UNKNOWN',
+        timestamp: new Date()
+      };
+      
+      errors.push(errorEntry);
+      event.emailHistory[0].errors.push(errorEntry);
     }
   }
 
-  // Update email batch status
-  event.emailHistory[0].status = failedCount === 0 ? 'completed' : 'completed_with_errors';
+  // Update email batch status with processing time
+  const endTime = new Date();
+  const durationMs = endTime - startTime;
+  
+  event.emailHistory[0].status = failedCount === 0 ? 'completed' : 
+                                  sentCount === 0 ? 'failed' : 'completed_with_errors';
   event.emailHistory[0].sent = sentCount;
   event.emailHistory[0].failed = failedCount;
+  event.emailHistory[0].pending = 0;
+  event.emailHistory[0].processingTime.endTime = endTime;
+  event.emailHistory[0].processingTime.durationMs = durationMs;
+  
   await event.save();
 
   return res.status(200).json({
@@ -316,7 +364,7 @@ exports.getEmailHistoryDebug = asyncHandler(async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error retrieving email history debug:', error);
+    logger.error('Error retrieving email history debug:', error);
     return res.status(200).json({
       success: true,
       message: 'Error retrieving email history',
@@ -360,7 +408,7 @@ exports.getTemplates = asyncHandler(async (req, res) => {
     event.emailSettings.templates = templates;
     await event.save();
   }
-  return res.json({ success:true, templates });
+  return StandardErrorHandler.sendSuccess(res, 200, 'Email templates retrieved successfully', templates);
 });
 
 /**
@@ -371,10 +419,10 @@ exports.getTemplates = asyncHandler(async (req, res) => {
 exports.testSmtpConfiguration = asyncHandler(async (req, res) => {
   const { eventId } = req.params;
   const user = req.user;
-  console.log('[testSmtpConfiguration] Called with eventId:', eventId, 'by user:', user ? user.email : 'unknown');
+  logger.info('[testSmtpConfiguration] Called with eventId:', eventId, 'by user:', user ? user.email : 'unknown');
 
   if (!req.body.testEmail) {
-    console.error('[testSmtpConfiguration] No testEmail provided in request body:', req.body);
+    logger.error('[testSmtpConfiguration] No testEmail provided in request body:', req.body);
     return res.status(400).json({
       success: false,
       message: 'Test email address is required'
@@ -383,7 +431,7 @@ exports.testSmtpConfiguration = asyncHandler(async (req, res) => {
 
   const event = await Event.findById(eventId);
   if (!event) {
-    console.error('[testSmtpConfiguration] Event not found for eventId:', eventId);
+    logger.error('[testSmtpConfiguration] Event not found for eventId:', eventId);
     return res.status(404).json({ success: false, message: 'Event not found' });
   }
 
@@ -399,7 +447,7 @@ exports.testSmtpConfiguration = asyncHandler(async (req, res) => {
   if (!es.senderEmail) missingFields.push('senderEmail');
 
   if (missingFields.length > 0) {
-    console.error('[testSmtpConfiguration] Missing SMTP fields:', missingFields);
+    logger.error('[testSmtpConfiguration] Missing SMTP fields:', missingFields);
     return res.status(400).json({
       success: false,
       message: 'SMTP settings are not fully configured. Missing: ' + missingFields.join(', ')
@@ -407,7 +455,7 @@ exports.testSmtpConfiguration = asyncHandler(async (req, res) => {
   }
 
   // Log SMTP config (mask password)
-  console.log('[testSmtpConfiguration] SMTP config:', {
+  logger.info('[testSmtpConfiguration] SMTP config:', {
     smtpHost: es.smtpHost,
     smtpPort: es.smtpPort,
     smtpUser: es.smtpUser,
@@ -431,7 +479,7 @@ exports.testSmtpConfiguration = asyncHandler(async (req, res) => {
     });
 
     // Log test email details
-    console.log('[testSmtpConfiguration] Sending test email to:', req.body.testEmail);
+    logger.info('[testSmtpConfiguration] Sending test email to:', req.body.testEmail);
 
     const info = await transporter.sendMail({
       from: `"${es.senderName}" <${es.senderEmail}>`,
@@ -444,7 +492,7 @@ exports.testSmtpConfiguration = asyncHandler(async (req, res) => {
       `
     });
 
-    console.log('[testSmtpConfiguration] Test email sent. MessageId:', info.messageId);
+    logger.info('[testSmtpConfiguration] Test email sent. MessageId:', info.messageId);
     return res.status(200).json({
       success: true,
       message: `Test email sent successfully to ${req.body.testEmail}`,
@@ -453,7 +501,7 @@ exports.testSmtpConfiguration = asyncHandler(async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('[testSmtpConfiguration] Error sending test email:', error);
+    logger.error('[testSmtpConfiguration] Error sending test email:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to send test email',
@@ -615,9 +663,9 @@ async function generateQRCode(registrationId, eventId) {
     });
     
     return await qrcode.toDataURL(qrData);
-  } catch (err) {
-    console.error('Error generating QR code:', err);
-    throw err;
+  } catch (error) {
+    logger.error('Error generating QR code:', error);
+    throw error;
   }
 }
 
@@ -732,14 +780,14 @@ exports.updateTemplate = asyncHandler(async (req,res,next)=>{
   // Ensure Mongoose tracks nested object changes
   event.markModified('emailSettings.templates');
   await event.save();
-  return res.json({ success:true, template: event.emailSettings.templates[templateKey] });
+  return StandardErrorHandler.sendSuccess(res, 200, 'Email template retrieved successfully', event.emailSettings.templates[templateKey]);
 });
 
 // POST /api/events/:eventId/emails/preview
 // body: { filters, templateKey, placeholders }
 exports.previewRecipients = asyncHandler(async (req,res,next)=>{
   // For now, return stub with totalCount 0; full logic later.
-  return res.json({ success:true, totalCount:0, sample:[] });
+  return StandardErrorHandler.sendSuccess(res, 200, 'Email history retrieved successfully', { totalCount: 0, sample: [] });
 });
 
 // POST /api/events/:eventId/emails/send
@@ -771,10 +819,311 @@ exports.sendCustomEmail = asyncHandler(async (req,res,next)=>{
         }
       });
       sent++;
-    }catch(err){
+    } catch (error) {
       failed++;
       errors.push({ email, error: err.message });
     }
   }
-  return res.json({ success:true, sent, failed, errors });
+  return StandardErrorHandler.sendSuccess(res, 200, 'Email sent successfully', { sent, failed, errors });
+});
+
+/**
+ * @desc    Get enhanced email history with failure analysis
+ * @route   GET /api/events/:eventId/emails/history-enhanced
+ * @access  Private
+ */
+exports.getEnhancedEmailHistory = asyncHandler(async (req, res) => {
+  const { eventId } = req.params;
+  const { page = 1, limit = 20, status, templateUsed, dateFrom, dateTo } = req.query;
+
+  const event = await Event.findById(eventId).populate('emailHistory.sentBy', 'firstName lastName email');
+  if (!event) {
+    return res.status(404).json({
+      success: false,
+      message: 'Event not found'
+    });
+  }
+
+  let emailHistory = event.emailHistory || [];
+
+  // Apply filters
+  if (status) {
+    emailHistory = emailHistory.filter(email => email.status === status);
+  }
+  
+  if (templateUsed) {
+    emailHistory = emailHistory.filter(email => email.templateUsed === templateUsed);
+  }
+  
+  if (dateFrom || dateTo) {
+    emailHistory = emailHistory.filter(email => {
+      const emailDate = new Date(email.date);
+      if (dateFrom && emailDate < new Date(dateFrom)) return false;
+      if (dateTo && emailDate > new Date(dateTo)) return false;
+      return true;
+    });
+  }
+
+  // Calculate statistics
+  const stats = emailHistory.reduce((acc, email) => {
+    acc.totalEmails++;
+    acc.totalRecipients += email.recipients || 0;
+    acc.totalSent += email.sent || 0;
+    acc.totalFailed += email.failed || 0;
+    acc.totalErrors += (email.errors || []).length;
+    
+    if (email.status === 'completed') acc.completed++;
+    else if (email.status === 'completed_with_errors') acc.completedWithErrors++;
+    else if (email.status === 'failed') acc.failed++;
+    else if (email.status === 'pending') acc.pending++;
+    
+    return acc;
+  }, {
+    totalEmails: 0,
+    totalRecipients: 0,
+    totalSent: 0,
+    totalFailed: 0,
+    totalErrors: 0,
+    completed: 0,
+    completedWithErrors: 0,
+    failed: 0,
+    pending: 0
+  });
+
+  // Success rate calculation
+  stats.successRate = stats.totalRecipients > 0 
+    ? ((stats.totalSent / stats.totalRecipients) * 100).toFixed(2)
+    : 0;
+
+  // Pagination
+  const startIndex = (page - 1) * limit;
+  const endIndex = page * limit;
+  const paginatedHistory = emailHistory.slice(startIndex, endIndex);
+
+  // Get common error patterns
+  const errorPatterns = {};
+  emailHistory.forEach(email => {
+    if (email.errors && email.errors.length > 0) {
+      email.errors.forEach(error => {
+        const pattern = error.errorCode || 'UNKNOWN';
+        errorPatterns[pattern] = (errorPatterns[pattern] || 0) + 1;
+      });
+    }
+  });
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      history: paginatedHistory,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(emailHistory.length / limit),
+        totalItems: emailHistory.length,
+        itemsPerPage: parseInt(limit)
+      },
+      statistics: stats,
+      errorPatterns: Object.entries(errorPatterns)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 10) // Top 10 error patterns
+        .map(([pattern, count]) => ({ pattern, count }))
+    }
+  });
+});
+
+/**
+ * @desc    Get detailed failure report for specific email
+ * @route   GET /api/events/:eventId/emails/:emailId/failures
+ * @access  Private
+ */
+exports.getEmailFailureReport = asyncHandler(async (req, res) => {
+  const { eventId, emailId } = req.params;
+
+  const event = await Event.findById(eventId);
+  if (!event) {
+    return res.status(404).json({
+      success: false,
+      message: 'Event not found'
+    });
+  }
+
+  const emailRecord = event.emailHistory.id(emailId);
+  if (!emailRecord) {
+    return res.status(404).json({
+      success: false,
+      message: 'Email record not found'
+    });
+  }
+
+  // Group errors by type for analysis
+  const errorAnalysis = {};
+  if (emailRecord.errors) {
+    emailRecord.errors.forEach(error => {
+      const errorType = error.errorCode || 'UNKNOWN';
+      if (!errorAnalysis[errorType]) {
+        errorAnalysis[errorType] = {
+          count: 0,
+          emails: [],
+          description: getErrorDescription(errorType)
+        };
+      }
+      errorAnalysis[errorType].count++;
+      errorAnalysis[errorType].emails.push({
+        email: error.email,
+        error: error.error,
+        timestamp: error.timestamp
+      });
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      emailRecord: {
+        subject: emailRecord.subject,
+        date: emailRecord.date,
+        status: emailRecord.status,
+        recipients: emailRecord.recipients,
+        sent: emailRecord.sent,
+        failed: emailRecord.failed,
+        processingTime: emailRecord.processingTime
+      },
+      errorAnalysis,
+      totalErrors: emailRecord.errors ? emailRecord.errors.length : 0
+    }
+  });
+});
+
+// Helper function to get error descriptions
+function getErrorDescription(errorCode) {
+  const descriptions = {
+    'ENOTFOUND': 'SMTP server not found - check host configuration',
+    'ECONNREFUSED': 'Connection refused - SMTP server may be down',
+    'EAUTH': 'Authentication failed - check username/password',
+    'EMESSAGE': 'Message format error - check email content',
+    'ETIMEDOUT': 'Connection timeout - server may be overloaded',
+    'EENVELOPE': 'Invalid recipient email address',
+    'UNKNOWN': 'Unknown error - check logs for details'
+  };
+  return descriptions[errorCode] || 'Unrecognized error code';
+}
+
+/**
+ * @desc    Send bulk emails to selected registrations
+ * @route   POST /api/events/:eventId/emails/bulk-send
+ * @access  Private
+ */
+exports.sendBulkEmail = asyncHandler(async (req, res) => {
+  const { eventId } = req.params;
+  const { registrationIds, subject, message, templateId } = req.body;
+
+  if (!registrationIds || !Array.isArray(registrationIds) || registrationIds.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Registration IDs array is required'
+    });
+  }
+
+  if (!subject || !message) {
+    return res.status(400).json({
+      success: false,
+      message: 'Subject and message are required'
+    });
+  }
+
+  const event = await Event.findById(eventId);
+  if (!event) {
+    return res.status(404).json({
+      success: false,
+      message: 'Event not found'
+    });
+  }
+
+  // Get registrations with email addresses
+  const Registration = require('../models/Registration');
+  const registrations = await Registration.find({
+    _id: { $in: registrationIds },
+    'personalInfo.email': { $exists: true, $ne: '' }
+  });
+
+  if (registrations.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'No registrations with valid email addresses found'
+    });
+  }
+
+  const sendEmail = require('../services/emailService');
+const logger = require('../utils/logger');
+  let sent = 0;
+  let failed = 0;
+  const errors = [];
+
+  // Process each registration
+  for (const registration of registrations) {
+    try {
+      const email = registration.personalInfo.email;
+      const personalizedMessage = message
+        .replace(/\{firstName\}/g, registration.personalInfo.firstName || 'Dear Participant')
+        .replace(/\{lastName\}/g, registration.personalInfo.lastName || '')
+        .replace(/\{registrationId\}/g, registration.registrationId || registration._id)
+        .replace(/\{eventName\}/g, event.name || 'Event');
+
+      await sendEmail({
+        to: email,
+        subject,
+        html: personalizedMessage,
+        fromName: event.emailSettings?.senderName || 'Event Team',
+        fromEmail: event.emailSettings?.senderEmail || 'noreply@example.com',
+        smtp: {
+          host: event.emailSettings?.smtpHost,
+          port: event.emailSettings?.smtpPort,
+          secure: event.emailSettings?.smtpSecure,
+          auth: {
+            user: event.emailSettings?.smtpUser,
+            pass: event.emailSettings?.smtpPassword
+          }
+        }
+      });
+      sent++;
+    } catch (error) {
+      failed++;
+      errors.push({ 
+        registrationId: registration._id,
+        email: registration.personalInfo.email,
+        error: err.message 
+      });
+    }
+  }
+
+  // Log email activity to event history
+  if (!event.emailHistory) event.emailHistory = [];
+  event.emailHistory.push({
+    subject,
+    recipients: registrations.length,
+    sent,
+    failed,
+    date: new Date(),
+    status: failed === 0 ? 'completed' : (sent > 0 ? 'completed_with_errors' : 'failed'),
+    templateUsed: templateId || 'custom',
+    sentBy: req.user._id,
+    errors: errors.map(e => ({
+      email: e.email,
+      error: e.error,
+      errorCode: 'UNKNOWN',
+      timestamp: new Date()
+    }))
+  });
+
+  await event.save();
+
+  return res.status(200).json({
+    success: true,
+    message: 'Bulk email processing completed',
+    data: {
+      totalRegistrations: registrations.length,
+      sent,
+      failed,
+      errors
+    }
+  });
 });

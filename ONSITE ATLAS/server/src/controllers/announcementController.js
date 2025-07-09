@@ -3,6 +3,7 @@ const Event = require('../models/Event'); // To check if event exists
 const asyncHandler = require('../middleware/async');
 const { ApiError } = require('../utils/ApiError');
 const logger = require('../config/logger');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 /**
  * @swagger
@@ -170,10 +171,10 @@ exports.getAnnouncementsByEvent = asyncHandler(async (req, res, next) => {
   try {
     total = await Announcement.countDocuments(query);
     logger.info(`[ANNOUNCEMENT_CONTROLLER] Announcement.countDocuments result: ${total}`);
-  } catch (err) {
-    logger.error('[ANNOUNCEMENT_CONTROLLER] Error from Announcement.countDocuments:', err);
+  } catch (error) {
+    logger.error('[ANNOUNCEMENT_CONTROLLER] Error from Announcement.countDocuments:', error);
     // Rethrow the error to be caught by asyncHandler
-    throw err; 
+    throw error; 
   }
 
   let announcements;
@@ -184,10 +185,10 @@ exports.getAnnouncementsByEvent = asyncHandler(async (req, res, next) => {
       .skip(startIndex)
       .limit(limit);
     logger.info(`[ANNOUNCEMENT_CONTROLLER] Announcement.find result count: ${announcements.length}`);
-  } catch (err) {
-    logger.error('[ANNOUNCEMENT_CONTROLLER] Error from Announcement.find:', err);
+  } catch (error) {
+    logger.error('[ANNOUNCEMENT_CONTROLLER] Error from Announcement.find:', error);
     // Rethrow the error to be caught by asyncHandler
-    throw err;
+    throw error;
   }
 
   // Pagination result

@@ -1,29 +1,22 @@
 const jwt = require('jsonwebtoken');
-const Registration = require('../models/Registration');
-const Abstract = require('../models/Abstract');
-const EventSponsor = require('../models/EventSponsor');
-const Category = require('../models/Category');
-const Payment = require('../models/Payment');
-const Workshop = require('../models/Workshop');
+const { Registration, Abstract, EventSponsor, Category, Payment, Workshop, EventClient, Event, Resource } = require('../models');
 const { sendSuccess, sendPaginated } = require('../utils/responseFormatter');
 const excelHelper = require('../utils/excelHelper');
 const config = require('../config/config');
 const bcrypt = require('bcryptjs');
-const EventClient = require('../models/EventClient');
-const Event = require('../models/Event');
 const ApiError = require('../utils/ApiError');
-const Resource = require('../models/Resource');
 const { Parser: Json2csvParser } = require('json2csv');
 const PDFDocument = require('pdfkit');
 const stream = require('stream');
 const { generateRegistrationId } = require('../utils/idGenerator');
 const { getNextSequenceValue } = require('../utils/counterUtils');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 // Utility to check event context
 function ensureEventContext(req, res, next) {
   if (!req.client || !req.client.event) {
     console.error('[ClientPortal] Missing event context for client:', req.client ? req.client._id : 'unknown');
-    return res.status(400).json({ success: false, message: 'Event context missing. Please re-login or contact support.' });
+    return StandardErrorHandler.sendError(res, 400, 'Event context missing. Please re-login or contact support.');
   }
   return null;
 }
@@ -50,7 +43,7 @@ const loginClient = async (req, res, next) => {
     const secret = process.env.CLIENT_JWT_SECRET || process.env.JWT_SECRET;
     const token = jwt.sign(payload, secret, { expiresIn: '2d' });
     res.json({ success: true, token, client: { clientId: client.clientId, name: client.name, email: client.email, phone: client.phone, event: client.event } });
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error logging in', true, err.stack));
   }
 };
@@ -77,7 +70,7 @@ const getClientDashboard = async (req, res, next) => {
       totalSponsors
     };
     sendSuccess(res, 200, 'Dashboard data', stats);
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error fetching dashboard data', true, err.stack));
   }
 };
@@ -106,7 +99,7 @@ const getClientRegistrants = async (req, res, next) => {
       .skip((page - 1) * limit)
       .limit(Number(limit));
     sendPaginated(res, 200, 'Registrants list', registrants, Number(page), Number(limit), total);
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error fetching registrants', true, err.stack));
   }
 };
@@ -134,7 +127,7 @@ const bulkImportClientRegistrants = async (req, res, next) => {
       created.push(newReg);
     }
     res.json({ success: true, createdCount: created.length });
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error importing registrants', true, err.stack));
   }
 };
@@ -148,7 +141,7 @@ const exportClientRegistrants = async (req, res, next) => {
     res.setHeader('Content-Disposition', 'attachment; filename="registrants.xlsx"');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buffer);
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error exporting registrants', true, err.stack));
   }
 };
@@ -159,7 +152,7 @@ const getClientAbstracts = async (req, res, next) => {
     const eventId = req.client.event;
     const abstracts = await Abstract.find({ event: eventId }).populate('registration category');
     sendSuccess(res, 200, 'Abstracts list', abstracts);
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error fetching abstracts', true, err.stack));
   }
 };
@@ -170,7 +163,7 @@ const getClientSponsors = async (req, res, next) => {
     const eventId = req.client.event;
     const sponsors = await EventSponsor.find({ event: eventId });
     sendSuccess(res, 200, 'Sponsors list', sponsors);
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error fetching sponsors', true, err.stack));
   }
 };
@@ -181,7 +174,7 @@ const getClientCategories = async (req, res, next) => {
     const eventId = req.client.event;
     const categories = await Category.find({ event: eventId });
     sendSuccess(res, 200, 'Categories list', categories);
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error fetching categories', true, err.stack));
   }
 };
@@ -192,7 +185,7 @@ const getClientPayments = async (req, res, next) => {
     const eventId = req.client.event;
     const payments = await Payment.find({ event: eventId });
     sendSuccess(res, 200, 'Payments list', payments);
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error fetching payments', true, err.stack));
   }
 };
@@ -203,7 +196,7 @@ const getClientWorkshops = async (req, res, next) => {
     const eventId = req.client.event;
     const workshops = await Workshop.find({ event: eventId });
     sendSuccess(res, 200, 'Workshops list', workshops);
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error fetching workshops', true, err.stack));
   }
 };
@@ -231,7 +224,7 @@ const getClientReports = async (req, res, next) => {
       totalAbstracts,
       totalSponsors
     });
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error fetching reports', true, err.stack));
   }
 };
@@ -244,7 +237,7 @@ const listEventClients = async (req, res, next) => {
     const event = await Event.findById(eventId).populate('eventClients');
     if (!event) return next(new ApiError(404, 'Event not found'));
     res.json({ success: true, clients: event.eventClients });
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error listing event clients', true, err.stack));
   }
 };
@@ -277,7 +270,7 @@ const createEventClient = async (req, res, next) => {
     event.eventClients.push(newClient._id);
     await event.save();
     res.status(201).json({ success: true, client: newClient, plainPassword: phone });
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error creating event client', true, err.stack));
   }
 };
@@ -299,7 +292,7 @@ const updateEventClient = async (req, res, next) => {
     await client.save();
     console.log('[updateEventClient] Saved client.status:', client.status);
     res.json({ success: true, client });
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error updating event client', true, err.stack));
   }
 };
@@ -314,7 +307,7 @@ const deleteEventClient = async (req, res, next) => {
     await Event.findByIdAndUpdate(client.event, { $pull: { eventClients: client._id } });
     await client.deleteOne();
     res.json({ success: true });
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error deleting event client', true, err.stack));
   }
 };
@@ -330,7 +323,7 @@ const resetEventClientPassword = async (req, res, next) => {
     client.passwordHash = client.phone; // Will be hashed by pre-save hook
     await client.save();
     res.json({ success: true, plainPassword: client.phone });
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error resetting event client password', true, err.stack));
   }
 };
@@ -418,7 +411,7 @@ const getClientAnalytics = async (req, res, next) => {
     };
     console.log('[CLIENT ANALYTICS RESPONSE]', JSON.stringify(response, null, 2));
     res.json(response);
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error fetching analytics', true, err.stack));
   }
 };
@@ -481,7 +474,7 @@ const getClientRecent = async (req, res, next) => {
     };
     console.log('[CLIENT RECENT RESPONSE]', JSON.stringify(response, null, 2));
     res.json(response);
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error fetching recent activity', true, err.stack));
   }
 };
@@ -503,7 +496,7 @@ const exportClientReport = async (req, res, next) => {
     } else if (reportType === 'abstracts') {
       data = await Abstract.find({ event: eventId }).populate('registration category');
     } else {
-      return res.status(400).json({ success: false, message: 'Invalid report type' });
+      return StandardErrorHandler.sendError(res, 400, 'Invalid report type');
     }
     // Export logic
     if (format === 'excel') {
@@ -570,9 +563,9 @@ const exportClientReport = async (req, res, next) => {
       doc.end();
       pass.pipe(res);
     } else {
-      return res.status(400).json({ success: false, message: 'Invalid export format' });
+      return StandardErrorHandler.sendError(res, 400, 'Invalid export format');
     }
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error exporting report', true, err.stack));
   }
 };
@@ -585,7 +578,7 @@ const addClientRegistrant = async (req, res, next) => {
     const { personalInfo = {}, customFields = {}, category, registrationType } = req.body;
     // Validate required fields
     if (!personalInfo.firstName || !personalInfo.lastName || !personalInfo.email || !category) {
-      return res.status(400).json({ success: false, message: 'Missing required fields: firstName, lastName, email, category' });
+      return StandardErrorHandler.sendError(res, 400, 'Missing required fields: firstName, lastName, email, category');
     }
     // Check for duplicate email in this event
     const exists = await Registration.findOne({ event: eventId, 'personalInfo.email': personalInfo.email });
@@ -607,10 +600,10 @@ const addClientRegistrant = async (req, res, next) => {
       // Double-check uniqueness (should be extremely rare)
       const existing = await Registration.findOne({ event: eventId, registrationId });
       if (existing) {
-        return res.status(500).json({ success: false, message: 'Failed to generate unique registration ID. Please try again.' });
+        return StandardErrorHandler.sendError(res, 500, 'Failed to generate unique registration ID. Please try again.');
       }
     } catch (error) {
-      return res.status(500).json({ success: false, message: 'Failed to generate registration ID' });
+      return StandardErrorHandler.sendError(res, 500, 'Failed to generate registration ID');
     }
     // --- End ID Generation ---
     const reg = await Registration.create({
@@ -624,7 +617,7 @@ const addClientRegistrant = async (req, res, next) => {
     });
     const populated = await Registration.findById(reg._id).populate('category');
     res.status(201).json({ success: true, data: populated });
-  } catch (err) {
+  } catch (error) {
     next(new ApiError(500, 'Error adding registrant', true, err.stack));
   }
 };

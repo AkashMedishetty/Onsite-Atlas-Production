@@ -1,12 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const { protect, restrict } = require('../middleware/auth.middleware');
+const { checkEventNotArchived } = require('../middleware/archive.middleware');
 const {
   getEvents,
   createEvent,
   getEventById,
   updateEvent,
   deleteEvent,
+  archiveEvent,
   getEventDashboard,
   getEventStatistics,
   getEventResourceConfig,
@@ -17,7 +19,15 @@ const {
   getEmailSettings,
   updateEmailSettings,
   getPortalSettings,
-  updatePortalSettings
+  updatePortalSettings,
+  getComponentConfig,
+  updateComponentConfig,
+  toggleComponentRegistration,
+  updateDailyConfiguration,
+  updateWorkshopComponents,
+  updateSessionComponents,
+  updatePackageDeals,
+  getComponentAnalytics
 } = require('../controllers/event.controller');
 const { getEventResourceStatistics, exportResourceUsage } = require('../controllers/resource.controller');
 const { getCategories, getCategoriesPublic, createCategory } = require('../controllers/category.controller');
@@ -30,7 +40,7 @@ const registrationRouter = require('./registrations.routes');
 // --- Import Resource Router ---
 const resourceRouter = require('./resource.routes');
 // --- Import Announcement Router ---
-const announcementRouter = require('./announcementRoutes.js');
+const announcementRouter = require('./announcementRoutes');
 // --- Import Sponsor Router ---
 const sponsorRouter = require('./sponsor.routes');
 
@@ -48,6 +58,10 @@ router.route('/:id')
   .get(getEventById)
   .put(protect, updateEvent)
   .delete(protect, restrict('admin'), deleteEvent);
+
+// Archive event route
+router.route('/:id/archive')
+  .patch(protect, archiveEvent);
 
 // Event dashboard
 router.route('/:id/dashboard')
@@ -119,13 +133,46 @@ router.route('/:id/portal-settings')
   .get(getPortalSettings)
   .put(updatePortalSettings);
 
-// Add public categories route
-router.route('/:id/public-categories')
-  .get(getCategoriesPublic);
+// =====================================================
+// NEW: Component-Based Registration Management Routes
+// =====================================================
 
-// Add public registration route
+// Component configuration routes
+router.route('/:id/component-config')
+  .get(protect, getComponentConfig)
+  .put(protect, restrict('admin', 'staff'), updateComponentConfig);
+
+// Toggle component-based registration
+router.route('/:id/component-config/toggle')
+  .patch(protect, restrict('admin', 'staff'), toggleComponentRegistration);
+
+// Daily configuration management
+router.route('/:id/component-config/daily')
+  .put(protect, restrict('admin', 'staff'), updateDailyConfiguration);
+
+// Workshop components management
+router.route('/:id/component-config/workshops')
+  .put(protect, restrict('admin', 'staff'), updateWorkshopComponents);
+
+// Session components management
+router.route('/:id/component-config/sessions')
+  .put(protect, restrict('admin', 'staff'), updateSessionComponents);
+
+// Package deals management
+router.route('/:id/component-config/packages')
+  .put(protect, restrict('admin', 'staff'), updatePackageDeals);
+
+// Component analytics
+router.route('/:id/component-analytics')
+  .get(protect, restrict('admin', 'staff'), getComponentAnalytics);
+
+// Add public categories route (protected from archived events)
+router.route('/:id/public-categories')
+  .get(checkEventNotArchived, getCategoriesPublic);
+
+// Add public registration route (protected from archived events)
 router.route('/:eventId/public-registrations')
-  .post(createRegistrationPublic);
+  .post(checkEventNotArchived, createRegistrationPublic);
 
 const emailRouter = require('./email.routes');
 // Mount the email router for event-specific email routes

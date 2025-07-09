@@ -130,7 +130,7 @@ const addSponsorPortalRegistrant = asyncHandler(async (req, res) => {
       createdAt: new Date(),
       updatedAt: new Date()
     });
-  } catch (err) {
+  } catch (error) {
     if (err.code === 11000) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'A registration with this name already exists in this category for this event.');
     }
@@ -338,6 +338,7 @@ const exportSponsorPortalRegistrants = asyncHandler(async (req, res) => {
 
   const flat = registrants.map(flattenRegistrant);
   const json2xls = require('json2xls');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
   const xls = json2xls(flat);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="sponsored_registrants_${sponsor.sponsorId}.xlsx"`);

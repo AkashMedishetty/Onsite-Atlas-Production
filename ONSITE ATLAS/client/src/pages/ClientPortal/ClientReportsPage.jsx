@@ -3,8 +3,8 @@ import { useClientAuth } from '../../contexts/ClientAuthContext';
 import clientReportsService from '../../services/clientReportsService';
 import { Tabs, Card, Button, Select, Alert, Spinner } from '../../components/common';
 import { Pie, Doughnut, Line, Bar } from 'react-chartjs-2';
+import { Chart } from 'chart.js/auto';
 import {
-  Chart as ChartJS,
   ArcElement,
   Tooltip,
   Legend,
@@ -18,7 +18,7 @@ import {
 } from 'chart.js';
 import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 
-ChartJS.register(
+Chart.register(
   ArcElement,
   Tooltip,
   Legend,
@@ -32,7 +32,7 @@ ChartJS.register(
 );
 
 // Chart component (copied from ReportsTab)
-const Chart = ({ type, data, options }) => {
+const ClientChart = ({ type, data, options }) => {
   const commonOptions = {
     responsive: true,
     maintainAspectRatio: false,
@@ -465,12 +465,12 @@ const ClientReportsPage = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <h4 className="text-sm font-medium text-gray-700 mb-1">By Category</h4>
-                      <Chart type="Pie" data={{ labels: Object.keys(statistics.registrations.byCategory), datasets: [{ data: Object.values(statistics.registrations.byCategory) }] }} />
+                      <ClientChart type="Pie" data={{ labels: Object.keys(statistics.registrations.byCategory), datasets: [{ data: Object.values(statistics.registrations.byCategory) }] }} />
                     </div>
                     {statistics.registrations.byDay?.length > 0 && (
                       <div>
                         <h4 className="text-sm font-medium text-gray-700 mb-1">Trend</h4>
-                        <Chart type="Line" data={{ labels: statistics.registrations.byDay.map(d => new Date(d.date).toLocaleDateString()), datasets: [{ data: statistics.registrations.byDay.map(d => d.count) }] }} />
+                        <ClientChart type="Line" data={{ labels: statistics.registrations.byDay.map(d => new Date(d.date).toLocaleDateString()), datasets: [{ data: statistics.registrations.byDay.map(d => d.count) }] }} />
                       </div>
                     )}
                   </div>
@@ -485,19 +485,19 @@ const ClientReportsPage = () => {
                     {statistics.resources?.food?.byType && Object.keys(statistics.resources.food.byType).length > 0 && (
                       <div>
                         <h4 className="text-sm font-medium text-gray-700 mb-1">Food</h4>
-                        <Chart type="Bar" data={{ labels: Object.keys(statistics.resources.food.byType), datasets: [{ data: Object.values(statistics.resources.food.byType) }] }} />
+                        <ClientChart type="Bar" data={{ labels: Object.keys(statistics.resources.food.byType), datasets: [{ data: Object.values(statistics.resources.food.byType) }] }} />
                       </div>
                     )}
                     {statistics.resources?.kitBag?.byType && Object.keys(statistics.resources.kitBag.byType).length > 0 && (
                       <div>
                         <h4 className="text-sm font-medium text-gray-700 mb-1">Kits</h4>
-                        <Chart type="Doughnut" data={{ labels: Object.keys(statistics.resources.kitBag.byType), datasets: [{ data: Object.values(statistics.resources.kitBag.byType) }] }} />
+                        <ClientChart type="Doughnut" data={{ labels: Object.keys(statistics.resources.kitBag.byType), datasets: [{ data: Object.values(statistics.resources.kitBag.byType) }] }} />
                       </div>
                     )}
                     {statistics.resources?.certificates?.byType && Object.keys(statistics.resources.certificates.byType).length > 0 && (
                       <div>
                         <h4 className="text-sm font-medium text-gray-700 mb-1">Certs</h4>
-                        <Chart type="Doughnut" data={{ labels: Object.keys(statistics.resources.certificates.byType), datasets: [{ data: Object.values(statistics.resources.certificates.byType) }] }} />
+                        <ClientChart type="Doughnut" data={{ labels: Object.keys(statistics.resources.certificates.byType), datasets: [{ data: Object.values(statistics.resources.certificates.byType) }] }} />
                       </div>
                     )}
                   </div>
@@ -511,13 +511,13 @@ const ClientReportsPage = () => {
                     {statistics.abstracts?.byStatus && Object.keys(statistics.abstracts.byStatus).length > 0 && (
                       <div>
                         <h4 className="text-sm font-medium text-gray-700 mb-1">By Status</h4>
-                        <Chart type="Pie" data={{ labels: Object.keys(statistics.abstracts.byStatus), datasets: [{ data: Object.values(statistics.abstracts.byStatus) }] }} />
+                        <ClientChart type="Pie" data={{ labels: Object.keys(statistics.abstracts.byStatus), datasets: [{ data: Object.values(statistics.abstracts.byStatus) }] }} />
                       </div>
                     )}
                     {statistics.abstracts?.byCategory && Object.keys(statistics.abstracts.byCategory).length > 0 && (
                       <div>
                         <h4 className="text-sm font-medium text-gray-700 mb-1">By Category</h4>
-                        <Chart type="Bar" data={{ labels: Object.keys(statistics.abstracts.byCategory), datasets: [{ label: 'Count', data: Object.values(statistics.abstracts.byCategory) }] }} />
+                        <ClientChart type="Bar" data={{ labels: Object.keys(statistics.abstracts.byCategory), datasets: [{ label: 'Count', data: Object.values(statistics.abstracts.byCategory) }] }} />
                       </div>
                     )}
                   </div>
@@ -544,7 +544,7 @@ const ClientReportsPage = () => {
               {statistics.registrations.byDay?.length > 0 ? (
                 <div>
                   <h3 className="text-md font-semibold mb-3">Registration Timeline</h3>
-                  <Chart type="Area" data={{ labels: statistics.registrations.byDay.map(d => new Date(d.date).toLocaleDateString()), datasets: [{ data: statistics.registrations.byDay.map(d => d.count) }] }} />
+                  <ClientChart type="Area" data={{ labels: statistics.registrations.byDay.map(d => new Date(d.date).toLocaleDateString()), datasets: [{ data: statistics.registrations.byDay.map(d => d.count) }] }} />
                 </div>
               ) : <p className="text-center text-gray-500 py-4">No timeline data.</p>}
               {Object.keys(statistics.registrations.byCategory).length > 0 ? (
@@ -583,7 +583,7 @@ const ClientReportsPage = () => {
                 {statistics.resources?.food?.byType && Object.keys(statistics.resources.food.byType).length > 0 ? (
                   <div>
                     <h3 className="text-md font-semibold mb-3">Meals Scanned (by Type)</h3>
-                    <Chart type="Bar" data={{ labels: Object.keys(statistics.resources.food.byType), datasets: [{ label: 'Scans', data: Object.values(statistics.resources.food.byType) }] }} />
+                    <ClientChart type="Bar" data={{ labels: Object.keys(statistics.resources.food.byType), datasets: [{ label: 'Scans', data: Object.values(statistics.resources.food.byType) }] }} />
                   </div>
                 ) : (
                   !loading && <p className="text-center text-gray-500 py-4">No meal scan data available.</p>
@@ -591,7 +591,7 @@ const ClientReportsPage = () => {
                 {statistics.resources?.food?.byDay?.length > 0 ? (
                   <div>
                     <h3 className="text-md font-semibold mb-3">Daily Food Scan Trend</h3>
-                    <Chart type="Line" data={{ labels: statistics.resources.food.byDay.map(d => new Date(d.date).toLocaleDateString()), datasets: [{ label: 'Scans', data: statistics.resources.food.byDay.map(d => d.count), fill: true }] }} />
+                    <ClientChart type="Line" data={{ labels: statistics.resources.food.byDay.map(d => new Date(d.date).toLocaleDateString()), datasets: [{ label: 'Scans', data: statistics.resources.food.byDay.map(d => d.count), fill: true }] }} />
                   </div>
                 ) : (
                   !loading && <p className="text-center text-gray-500 py-4">No daily trend data available.</p>
@@ -600,7 +600,7 @@ const ClientReportsPage = () => {
               {hourlyFoodScanData.labels.length > 0 ? (
                 <div>
                   <h3 className="text-md font-semibold mb-3">Hourly Scan Distribution (Recent)</h3>
-                  <Chart type="Bar" data={hourlyFoodScanData} />
+                  <ClientChart type="Bar" data={hourlyFoodScanData} />
                 </div>
               ) : (
                 !loading && <p className="text-center text-gray-500 py-4">Not enough scan data for hourly breakdown.</p>
@@ -643,7 +643,7 @@ const ClientReportsPage = () => {
                 {statistics.resources?.kitBag?.byType && Object.keys(statistics.resources.kitBag.byType).length > 0 ? (
                   <div>
                     <h3 className="text-md font-semibold mb-3">Kits Distributed (by Type)</h3>
-                    <Chart type="Doughnut" data={{ labels: Object.keys(statistics.resources.kitBag.byType), datasets: [{ data: Object.values(statistics.resources.kitBag.byType) }] }} />
+                    <ClientChart type="Doughnut" data={{ labels: Object.keys(statistics.resources.kitBag.byType), datasets: [{ data: Object.values(statistics.resources.kitBag.byType) }] }} />
                   </div>
                 ) : (
                   !loading && <p className="text-center text-gray-500 py-4">No kit distribution data available.</p>
@@ -651,7 +651,7 @@ const ClientReportsPage = () => {
                 {hourlyKitScanData.labels.length > 0 ? (
                   <div>
                     <h3 className="text-md font-semibold mb-3">Hourly Distribution (Recent)</h3>
-                    <Chart type="Bar" data={hourlyKitScanData} />
+                    <ClientChart type="Bar" data={hourlyKitScanData} />
                   </div>
                 ) : (
                   !loading && <p className="text-center text-gray-500 py-4">Not enough scan data for hourly breakdown.</p>
@@ -695,7 +695,7 @@ const ClientReportsPage = () => {
                 {statistics.resources?.certificates?.byType && Object.keys(statistics.resources.certificates.byType).length > 0 ? (
                   <div>
                     <h3 className="text-md font-semibold mb-3">Certificates Issued (by Type)</h3>
-                    <Chart type="Pie" data={{ labels: Object.keys(statistics.resources.certificates.byType), datasets: [{ data: Object.values(statistics.resources.certificates.byType) }] }} />
+                    <ClientChart type="Pie" data={{ labels: Object.keys(statistics.resources.certificates.byType), datasets: [{ data: Object.values(statistics.resources.certificates.byType) }] }} />
                   </div>
                 ) : (
                   !loading && <p className="text-center text-gray-500 py-4">No certificate issuance data available.</p>
@@ -703,7 +703,7 @@ const ClientReportsPage = () => {
                 {hourlyCertScanData.labels.length > 0 ? (
                   <div>
                     <h3 className="text-md font-semibold mb-3">Hourly Distribution (Recent)</h3>
-                    <Chart type="Bar" data={hourlyCertScanData} />
+                    <ClientChart type="Bar" data={hourlyCertScanData} />
                   </div>
                 ) : (
                   !loading && <p className="text-center text-gray-500 py-4">Not enough scan data for hourly breakdown.</p>
@@ -747,7 +747,7 @@ const ClientReportsPage = () => {
                 {(statistics.abstracts?.byStatus && Object.keys(statistics.abstracts.byStatus).length > 0) ? (
                   <div>
                     <h3 className="text-md font-semibold mb-3">Abstracts by Status</h3>
-                    <Chart type="Pie" data={{ labels: Object.keys(statistics.abstracts.byStatus), datasets: [{ data: Object.values(statistics.abstracts.byStatus) }] }} />
+                    <ClientChart type="Pie" data={{ labels: Object.keys(statistics.abstracts.byStatus), datasets: [{ data: Object.values(statistics.abstracts.byStatus) }] }} />
                   </div>
                 ) : (
                   !loading && <p className="text-center text-gray-500 py-4">No abstract status data available.</p>
@@ -755,15 +755,15 @@ const ClientReportsPage = () => {
                 {(statistics.abstracts?.byCategory && Object.keys(statistics.abstracts.byCategory).length > 0) ? (
                   <div>
                     <h3 className="text-md font-semibold mb-3">Abstracts by Category</h3>
-                    <Chart type="Bar" data={{ labels: Object.keys(statistics.abstracts.byCategory), datasets: [{ label: 'Count', data: Object.values(statistics.abstracts.byCategory) }] }} />
+                    <ClientChart type="Bar" data={{ labels: Object.keys(statistics.abstracts.byCategory), datasets: [{ label: 'Count', data: Object.values(statistics.abstracts.byCategory) }] }} />
                   </div>
                 ) : (
                   !loading && <p className="text-center text-gray-500 py-4">No abstract category data available.</p>
                 )}
               </div>
-      </div>
+            </div>
           )}
-      </div>
+        </div>
       </Card>
     </div>
   );

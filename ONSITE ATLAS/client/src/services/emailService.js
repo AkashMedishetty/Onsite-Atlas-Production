@@ -52,6 +52,31 @@ const emailService = {
   },
 
   /**
+   * Get enhanced email history with failure analysis
+   * @param {string} eventId - The ID of the event
+   * @param {Object} options - Filter and pagination options
+   * @returns {Promise} Promise with API response
+   */
+  getEnhancedEmailHistory: async (eventId, options = {}) => {
+    const queryParams = new URLSearchParams(options).toString();
+    const url = `/events/${eventId}/emails/history-enhanced${queryParams ? '?' + queryParams : ''}`;
+    console.log("Fetching enhanced email history from:", url);
+    const response = await api.get(url);
+    return response.data;
+  },
+
+  /**
+   * Get detailed failure report for specific email
+   * @param {string} eventId - The ID of the event
+   * @param {string} emailId - The ID of the email record
+   * @returns {Promise} Promise with API response
+   */
+  getEmailFailureReport: async (eventId, emailId) => {
+    const response = await api.get(`/events/${eventId}/emails/${emailId}/failures`);
+    return response.data;
+  },
+
+  /**
    * Get filtered list of recipients for an email
    * @param {string} eventId - The ID of the event
    * @param {Object} filters - Filter criteria

@@ -8,6 +8,7 @@ const Event = require('../models/Event');
 const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../config/logger');
 const sendEmail = require('../utils/sendEmail');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 // Helpers
 const signJwt = (author) => {

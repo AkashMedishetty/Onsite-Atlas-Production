@@ -2,6 +2,7 @@ const ImportJob = require('../models/ImportJob');
 const { processBulkImportJob } = require('../services/registrationImportService');
 const Event = require('../models/Event');
 const mongoose = require('mongoose');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 // POST /registrants
 async function bulkImportClientRegistrants(req, res) {
@@ -33,9 +34,9 @@ async function bulkImportClientRegistrants(req, res) {
     // Start async processing (force complementary type)
     processBulkImportJob(newJob._id, processedRegistrations, eventId, userId)
       .then(() => {})
-      .catch(err => {
+      .catch(error => {
         // Log error, update job status if needed
-        console.error(`[ClientBulkImport] Error in processBulkImportJob:`, err);
+        console.error(`[ClientBulkImport] Error in processBulkImportJob:`, error);
       });
     return res.status(202).json({ success: true, data: { jobId: newJob._id } });
   } catch (error) {

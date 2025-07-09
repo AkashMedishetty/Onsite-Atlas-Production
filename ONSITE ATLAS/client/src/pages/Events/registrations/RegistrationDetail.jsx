@@ -30,13 +30,18 @@ import {
   CakeIcon,
   ShoppingBagIcon,
   AcademicCapIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  ShieldExclamationIcon,
+  PlusIcon,
+  MinusIcon
 } from '@heroicons/react/24/outline';
 import registrationService from '../../../services/registrationService';
 import eventService from '../../../services/eventService';
 import resourceService from '../../../services/resourceService';
 import { formatDate } from '../../../utils/dateUtils';
 import { toast } from 'react-hot-toast';
+import paymentService from '../../../services/paymentService';
+import { Dialog } from '@headlessui/react';
 
 const RegistrationDetail = () => {
   const { eventId, registrationId } = useParams();
@@ -61,6 +66,25 @@ const RegistrationDetail = () => {
   const [badgeType, setBadgeType] = useState('standard');
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [resourceOptionMap, setResourceOptionMap] = useState({ food: {}, kitBag: {}, certificate: {}, certificatePrinting:{} });
+  const [showPaymentLinkModal, setShowPaymentLinkModal] = useState(false);
+  const [paymentLink, setPaymentLink] = useState(null);
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkError, setLinkError] = useState(null);
+  const [linkAmount, setLinkAmount] = useState('');
+  const [linkProvider, setLinkProvider] = useState('razorpay');
+  const [linkExpiry, setLinkExpiry] = useState(48);
+  const [linkSent, setLinkSent] = useState(false);
+  
+  // Resource Blocking State
+  const [resourceBlocks, setResourceBlocks] = useState([]);
+  const [resourceBlocksLoading, setResourceBlocksLoading] = useState(false);
+  const [availableResources, setAvailableResources] = useState([]);
+  const [showBlockResourceModal, setShowBlockResourceModal] = useState(false);
+  const [blockingResource, setBlockingResource] = useState(null);
+  const [blockReason, setBlockReason] = useState('');
+  const [blockType, setBlockType] = useState('permanent');
+  const [blockExpiry, setBlockExpiry] = useState('');
+  const [blockLoading, setBlockLoading] = useState(false);
   
   // Fetch registration once when component mounts
   const fetchRegistration = async () => {
@@ -154,6 +178,9 @@ const RegistrationDetail = () => {
         
         // Fetch certificate settings
         await fetchCertificateSettings();
+        
+        // Fetch resource blocks
+        await fetchResourceBlocks();
         
       } catch (err) {
         console.error('Error fetching data:', err);
@@ -556,6 +583,137 @@ const RegistrationDetail = () => {
     setResourceUsage(patched);
   }, [resourceOptionMap]);
   
+  const handleCreatePaymentLink = async () => {
+    setLinkLoading(true); setLinkError(null); setPaymentLink(null); setLinkSent(false);
+    try {
+      const res = await paymentService.createPaymentLink(eventId, {
+        amountCents: Math.round(parseFloat(linkAmount || 0) * 100),
+        provider: linkProvider,
+        registrationId: registration._id,
+        expiresInHours: linkExpiry,
+      });
+      setPaymentLink(res.data?.url || res.url);
+    } catch (err) {
+      setLinkError(err.response?.data?.message || err.message || 'Failed to create link');
+    } finally {
+      setLinkLoading(false);
+    }
+  };
+
+  const handleSendPaymentLink = async () => {
+    setLinkLoading(true);
+    try {
+      await paymentService.sendPaymentLink(paymentLink, registration.personalInfo?.email);
+      setLinkSent(true);
+      toast.success('Payment link sent successfully');
+    } catch (error) {
+      console.error('Error sending payment link:', error);
+      toast.error('Failed to send payment link');
+    } finally {
+      setLinkLoading(false);
+    }
+  };
+  
+  // Resource Blocking Functions
+  const fetchResourceBlocks = async () => {
+    if (!eventId || !registrationId) return;
+    
+    setResourceBlocksLoading(true);
+    try {
+      const response = await resourceService.getResourceBlocks(eventId, registrationId);
+      if (response.success) {
+        setResourceBlocks(response.data.activeBlocks || []);
+      } else {
+        console.error('Failed to fetch resource blocks:', response.message);
+        setResourceBlocks([]);
+      }
+    } catch (error) {
+      console.error('Error fetching resource blocks:', error);
+      setResourceBlocks([]);
+    } finally {
+      setResourceBlocksLoading(false);
+    }
+  };
+
+  const fetchAvailableResources = async () => {
+    if (!eventId) return;
+    
+    try {
+      const response = await resourceService.getAvailableResourcesForBlocking(eventId);
+      if (response.success) {
+        setAvailableResources(response.data || []);
+      } else {
+        console.error('Failed to fetch available resources:', response.message);
+        setAvailableResources([]);
+      }
+    } catch (error) {
+      console.error('Error fetching available resources:', error);
+      setAvailableResources([]);
+    }
+  };
+
+  const handleBlockResource = async () => {
+    if (!blockingResource || !blockReason.trim()) {
+      toast.error('Please select a resource and provide a reason');
+      return;
+    }
+
+    setBlockLoading(true);
+    try {
+      const blockData = {
+        resourceId: blockingResource._id,
+        resourceType: blockingResource.type,
+        reason: blockReason.trim(),
+        blockType,
+        expiresAt: blockType === 'temporary' && blockExpiry ? new Date(blockExpiry).toISOString() : null
+      };
+
+      const response = await resourceService.blockResource(eventId, registrationId, blockData);
+      if (response.success) {
+        toast.success('Resource blocked successfully');
+        setShowBlockResourceModal(false);
+        setBlockingResource(null);
+        setBlockReason('');
+        setBlockType('permanent');
+        setBlockExpiry('');
+        await fetchResourceBlocks(); // Refresh the blocks list
+      } else {
+        toast.error(response.message || 'Failed to block resource');
+      }
+    } catch (error) {
+      console.error('Error blocking resource:', error);
+      toast.error('Failed to block resource');
+    } finally {
+      setBlockLoading(false);
+    }
+  };
+
+  const handleRemoveBlock = async (resourceId, resourceName) => {
+    const reason = prompt(`Enter reason for removing block on "${resourceName}":`);
+    if (!reason || !reason.trim()) {
+      toast.error('Reason is required to remove a block');
+      return;
+    }
+
+    try {
+      const response = await resourceService.removeResourceBlock(eventId, registrationId, resourceId, reason.trim());
+      if (response.success) {
+        toast.success('Resource block removed successfully');
+        await fetchResourceBlocks(); // Refresh the blocks list
+      } else {
+        toast.error(response.message || 'Failed to remove resource block');
+      }
+    } catch (error) {
+      console.error('Error removing resource block:', error);
+      toast.error('Failed to remove resource block');
+    }
+  };
+
+  const openBlockResourceModal = async () => {
+    await fetchAvailableResources();
+    setShowBlockResourceModal(true);
+  };
+  
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -832,6 +990,16 @@ const RegistrationDetail = () => {
                 >
                   Activities
                 </button>
+                <button
+                  onClick={() => setActiveTab(3)}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 3
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Resource Blocks
+                </button>
               </nav>
             </div>
             
@@ -1102,6 +1270,138 @@ const RegistrationDetail = () => {
                 )}
               </div>
             )}
+
+            {/* Resource Blocks Tab */}
+            {activeTab === 3 && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium">Resource Blocks</h3>
+                  <div className="flex space-x-2">
+                    <Button 
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fetchResourceBlocks()}
+                      leadingIcon={<ArrowPathIcon className="h-4 w-4" />}
+                    >
+                      Refresh
+                    </Button>
+                    <Button 
+                      variant="primary"
+                      size="sm"
+                      onClick={openBlockResourceModal}
+                      leadingIcon={<PlusIcon className="h-4 w-4" />}
+                    >
+                      Block Resource
+                    </Button>
+                  </div>
+                </div>
+
+                {resourceBlocksLoading ? (
+                  <div className="flex justify-center py-8">
+                    <Spinner size="md" />
+                  </div>
+                ) : resourceBlocks.length === 0 ? (
+                  <div className="bg-gray-50 p-6 rounded-md text-center">
+                    <ShieldExclamationIcon className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                    <p className="text-gray-600 mb-2">No resource blocks found</p>
+                    <p className="text-sm text-gray-500">
+                      When resources are blocked for this registrant, they will appear here.
+                    </p>
+                    <Button 
+                      variant="outline"
+                      size="sm"
+                      onClick={openBlockResourceModal}
+                      className="mt-4"
+                      leadingIcon={<PlusIcon className="h-4 w-4" />}
+                    >
+                      Block a Resource
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="border rounded-md overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Resource
+                          </th>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Type
+                          </th>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Reason
+                          </th>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Block Type
+                          </th>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Blocked At
+                          </th>
+                          <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {resourceBlocks.map((block) => (
+                          <tr key={block._id}>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center">
+                                <div className={`h-2 w-2 rounded-full mr-3 ${
+                                  block.resourceType === 'food' ? 'bg-blue-500' :
+                                  block.resourceType === 'kit' ? 'bg-green-500' :
+                                  'bg-amber-500'
+                                }`}></div>
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {block.resourceId?.name || 'Unknown Resource'}
+                                  </div>
+                                  <div className="text-sm text-gray-500">
+                                    {block.resourceId?.description || 'No description'}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                block.resourceType === 'food' ? 'bg-blue-100 text-blue-800' :
+                                block.resourceType === 'kit' ? 'bg-green-100 text-green-800' :
+                                'bg-amber-100 text-amber-800'
+                              }`}>
+                                {block.resourceType.charAt(0).toUpperCase() + block.resourceType.slice(1)}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
+                              {block.reason}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                block.metadata?.blockType === 'permanent' ? 'bg-red-100 text-red-800' :
+                                block.metadata?.blockType === 'temporary' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-purple-100 text-purple-800'
+                              }`}>
+                                {block.metadata?.blockType || 'permanent'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {formatDate(block.blockedAt)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                              <button
+                                onClick={() => handleRemoveBlock(block.resourceId?._id || block.resourceId, block.resourceId?.name || 'Resource')}
+                                className="text-red-600 hover:text-red-900 hover:bg-red-50 px-3 py-1 rounded-md text-sm"
+                              >
+                                Remove Block
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </Card>
           
           {/* Certificate Section */}
@@ -1145,6 +1445,125 @@ const RegistrationDetail = () => {
           )}
         </div>
       </div>
+      
+      {/* Block Resource Modal */}
+      <Dialog open={showBlockResourceModal} onClose={() => setShowBlockResourceModal(false)} className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black opacity-30" />
+        <div className="bg-white rounded-lg p-6 space-y-4 relative z-50 w-full max-w-md">
+          <Dialog.Title className="text-lg font-semibold">Block Resource</Dialog.Title>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Select Resource</label>
+              <select 
+                value={blockingResource?._id || ''} 
+                onChange={(e) => {
+                  const resource = availableResources.find(r => r._id === e.target.value);
+                  setBlockingResource(resource || null);
+                }} 
+                className="w-full border border-gray-300 rounded-md p-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Choose a resource...</option>
+                {availableResources.map(resource => (
+                  <option key={resource._id} value={resource._id}>
+                    {resource.name} ({resource.type})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Block Type</label>
+              <select 
+                value={blockType} 
+                onChange={(e) => setBlockType(e.target.value)} 
+                className="w-full border border-gray-300 rounded-md p-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="permanent">Permanent</option>
+                <option value="temporary">Temporary</option>
+                <option value="conditional">Conditional</option>
+              </select>
+            </div>
+
+            {blockType === 'temporary' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Expiry Date</label>
+                <input 
+                  type="datetime-local" 
+                  value={blockExpiry} 
+                  onChange={(e) => setBlockExpiry(e.target.value)} 
+                  className="w-full border border-gray-300 rounded-md p-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Reason *</label>
+              <textarea 
+                value={blockReason} 
+                onChange={(e) => setBlockReason(e.target.value)} 
+                placeholder="Enter the reason for blocking this resource..."
+                rows={3}
+                className="w-full border border-gray-300 rounded-md p-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex space-x-3 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowBlockResourceModal(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleBlockResource}
+              disabled={blockLoading || !blockingResource || !blockReason.trim()}
+              className="flex-1"
+            >
+              {blockLoading ? 'Blocking...' : 'Block Resource'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+      
+      <Dialog open={showPaymentLinkModal} onClose={()=>setShowPaymentLinkModal(false)} className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black opacity-30" />
+        <div className="bg-white rounded-lg p-6 space-y-4 relative z-50 w-full max-w-md">
+          <Dialog.Title className="text-lg font-semibold">Create Payment Link</Dialog.Title>
+          <div className="space-y-2">
+            <label>Provider</label>
+            <select value={linkProvider} onChange={e=>setLinkProvider(e.target.value)} className="w-full border rounded p-2">
+              <option value="razorpay">Razorpay</option>
+              <option value="stripe">Stripe</option>
+              <option value="instamojo">Instamojo</option>
+              <option value="phonepe">PhonePe</option>
+              <option value="cashfree">Cashfree</option>
+              <option value="payu">PayU</option>
+              <option value="paytm">Paytm</option>
+              <option value="offline">Offline</option>
+            </select>
+            <label>Amount (INR)</label>
+            <input type="number" value={linkAmount} onChange={e=>setLinkAmount(e.target.value)} className="w-full border rounded p-2" />
+            <label>Expiry (hours)</label>
+            <input type="number" value={linkExpiry} onChange={e=>setLinkExpiry(e.target.value)} className="w-full border rounded p-2" />
+          </div>
+          {linkError && <div className="text-red-600 text-sm">{linkError}</div>}
+          {paymentLink ? (
+            <div className="space-y-2">
+              <div className="text-green-700 break-all">Link: <a href={paymentLink} target="_blank" rel="noopener noreferrer">{paymentLink}</a></div>
+              <button onClick={()=>{navigator.clipboard.writeText(paymentLink); toast.success('Copied!');}} className="px-3 py-1 bg-indigo-600 text-white rounded">Copy Link</button>
+              <button onClick={handleSendPaymentLink} className="px-3 py-1 bg-green-600 text-white rounded ml-2">Send Link via Email</button>
+              {linkSent && <div className="text-green-600">Link sent to {registration.personalInfo?.email}</div>}
+            </div>
+          ) : (
+            <button onClick={handleCreatePaymentLink} className="px-4 py-2 bg-indigo-600 text-white rounded" disabled={linkLoading}>{linkLoading ? 'Generating…' : 'Generate Link'}</button>
+          )}
+          <button onClick={()=>setShowPaymentLinkModal(false)} className="mt-4 px-4 py-2 bg-gray-300 rounded">Close</button>
+        </div>
+      </Dialog>
     </div>
   );
 };

@@ -6,6 +6,7 @@ const logger = require('../config/logger');
 const path = require('path');
 const fs = require('fs');
 const { UPLOADS_BASE_DIR } = require('../config/paths');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 /**
  * @desc    Get all abstracts for the current registrant

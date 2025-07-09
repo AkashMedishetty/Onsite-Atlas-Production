@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, Spinner } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FaSave, FaUndo, FaRedo, FaPrint, FaRuler, FaImage, FaFont, FaQrcode, FaShapes, FaArrowLeft, FaPlus, FaPalette, FaListOl, FaLayerGroup } from 'react-icons/fa';
+import { FaSave, FaUndo, FaRedo, FaPrint, FaRuler, FaImage, FaFont, FaQrcode, FaShapes, FaArrowLeft, FaPlus, FaPalette, FaListOl, FaLayerGroup, FaMinus } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import BadgeTemplate from '../../components/badges/BadgeTemplate';
 import BadgeTemplateList from '../../components/badges/BadgeTemplateList';
@@ -25,6 +25,7 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [eventData, setEventData] = useState(null);
+  const [error, setError] = useState(null);
   
   // Template state
   const initialTemplateState = {
@@ -79,7 +80,6 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
   const templateRef = useRef(template);
 
   const canvasWrapperRef = useRef(null);
-  const scale = 1.5;
   
   // Add state for activeAccordionKeys
   const [activeAccordionKeys, setActiveAccordionKeys] = useState([]);
@@ -89,6 +89,39 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
 
   // Add at the top-level of the component, after other state declarations
   const [showTemplateLibrary, setShowTemplateLibrary] = useState(false);
+
+  // Responsive scale based on screen size
+  const [scale, setScale] = useState(() => {
+    const screenWidth = window.innerWidth;
+    if (screenWidth < 768) return 1.0;      // Mobile: smaller scale
+    if (screenWidth < 1200) return 1.2;    // Tablet: medium scale
+    return 1.5;                             // Desktop: larger scale
+  });
+  
+  // Add zoom controls
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const finalScale = scale * zoomLevel;
+  
+  // Handle window resize to adjust scale
+  useEffect(() => {
+    const handleResize = () => {
+      const screenWidth = window.innerWidth;
+      let newScale;
+      if (screenWidth < 768) newScale = 1.0;
+      else if (screenWidth < 1200) newScale = 1.2;
+      else newScale = 1.5;
+      
+      setScale(newScale);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
+  // Zoom control functions
+  const handleZoomIn = () => setZoomLevel(prev => Math.min(prev + 0.2, 3));
+  const handleZoomOut = () => setZoomLevel(prev => Math.max(prev - 0.2, 0.5));
+  const handleZoomReset = () => setZoomLevel(1);
 
   // Load template or create new one on mount
   useEffect(() => {
@@ -567,7 +600,7 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
       badgeWidthPx = (template.size.width || 0);
       badgeHeightPx = (template.size.height || 0);
     }
-    const scalePx = scale;
+    const scalePx = finalScale;
     const style = {
       width: `${badgeWidthPx * scalePx}px`,
       height: `${badgeHeightPx * scalePx}px`,
@@ -640,16 +673,46 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
   };
 
   const handleElementMouseMove = (e) => {
-    if (!dragInfoRef.current) return;
-    const { id, startX, startY, origX, origY } = dragInfoRef.current;
-    const dx = (e.clientX - startX) / scale;
-    const dy = (e.clientY - startY) / scale;
-    setTemplate(prevTemplate => {
-      const updatedElements = prevTemplate.elements.map(el =>
-        el.id === id ? { ...el, position: { x: Math.max(0, origX + dx), y: Math.max(0, origY + dy) } } : el
-      );
-      return { ...prevTemplate, elements: updatedElements };
-    });
+    if (!dragInfoRef.current || !dragInfoRef.current.isDragging) return;
+    
+    const { element, offsetX, offsetY } = dragInfoRef.current;
+    const scalePx = finalScale;
+    
+    // Calculate new position
+    let newX = (e.clientX - offsetX) / scalePx;
+    let newY = (e.clientY - offsetY) / scalePx;
+    
+    // Bounds checking - keep element within badge area
+    const DPIN = 100;
+    let badgeWidthPx, badgeHeightPx;
+    if (template.unit === 'in') {
+      badgeWidthPx = (template.size.width || 0) * DPIN;
+      badgeHeightPx = (template.size.height || 0) * DPIN;
+    } else if (template.unit === 'cm') {
+      badgeWidthPx = (template.size.width || 0) * (DPIN / 2.54);
+      badgeHeightPx = (template.size.height || 0) * (DPIN / 2.54);
+    } else if (template.unit === 'mm') {
+      badgeWidthPx = (template.size.width || 0) * (DPIN / 25.4);
+      badgeHeightPx = (template.size.height || 0) * (DPIN / 25.4);
+    } else {
+      badgeWidthPx = (template.size.width || 0);
+      badgeHeightPx = (template.size.height || 0);
+    }
+    
+    const elementWidth = element.size?.width || 100;
+    const elementHeight = element.size?.height || 30;
+    
+    // Ensure element stays within badge bounds
+    newX = Math.max(0, Math.min(newX, badgeWidthPx - elementWidth));
+    newY = Math.max(0, Math.min(newY, badgeHeightPx - elementHeight));
+    
+    // Update element position
+    const updatedElement = { 
+      ...element, 
+      position: { x: newX, y: newY } 
+    };
+    
+    handleUpdateElement(updatedElement);
   };
 
   const handleElementMouseUp = () => {
@@ -670,38 +733,38 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
     stableAddToHistory(newTemplate);
   };
 
-  if (loading) return <Container className="py-5 text-center"><Spinner animation="border" /> Loading Designer...</Container>;
+  if (loading) return <div className="text-center"><Spinner animation="border" /></div>;
+  if (error) return <Alert variant="danger">{error}</Alert>;
 
   return (
-    <div className="badge-designer-container bg-light print-badge-designer">
-      {/* Top Bar */}
-      <header className="bg-white shadow-sm p-3 d-flex justify-content-between align-items-center">
-        <Button variant="outline-secondary" size="sm" onClick={() => navigate(`/events/${eventId}/settings/badges`)}>
-          <FaArrowLeft className="me-2" /> Back to Settings
-        </Button>
-        <h4 className="m-0">Badge Designer {template.name ? `- ${template.name}` : ''}</h4>
+    <div className="badge-designer badge-designer-container">
+      {/* Top Action Bar */}
+      <div className="d-flex justify-content-between align-items-center p-3 bg-white border-bottom">
         <div className="d-flex align-items-center">
-          <Button variant="outline-secondary" size="sm" className="me-2" onClick={handleUndo} disabled={historyIndex <= 0}>
-            <FaUndo className="me-1" /> Undo
+          <Button variant="outline-secondary" size="sm" onClick={handleBackToEvent} className="me-3">
+            <FaArrowLeft className="me-1" />Back to Event
           </Button>
-          <Button variant="outline-secondary" size="sm" className="me-2" onClick={handleRedo} disabled={historyIndex >= history.length - 1}>
-            <FaRedo className="me-1" /> Redo
+          <h4 className="m-0">Badge Designer</h4>
+        </div>
+        <div className="d-flex gap-2">
+          <Button variant="outline-secondary" size="sm" onClick={handleUndo} disabled={historyIndex <= 0}>
+            <FaUndo className="me-1" />Undo
           </Button>
-          <Button variant="primary" size="sm" onClick={handleSaveTemplate} disabled={saving}>
-            <FaSave className="me-2" /> {saving ? 'Saving...' : 'Save Template'}
+          <Button variant="outline-secondary" size="sm" onClick={handleRedo} disabled={historyIndex >= history.length - 1}>
+            <FaRedo className="me-1" />Redo
           </Button>
-          <Button variant="outline-info" size="sm" className="me-2" onClick={() => setShowTemplateLibrary(true)}>
-            <FaLayerGroup className="me-1" /> Template Library
+          <Button variant="primary" size="sm" onClick={handleSaveTemplate}>
+            <FaSave className="me-1" />Save Template
           </Button>
         </div>
-      </header>
+      </div>
 
-      {/* Main Content Row */}
-      <div className="badge-designer-main-row flex-grow-1">
+      {/* Main Designer Layout */}
+      <div className="badge-designer-main-row">
         {/* Left Sidebar */}
         <aside className="badge-designer-left-sidebar">
           <Card className="designer-panel-card mb-3">
-            <Card.Header><FaPalette className="me-2" />Template Settings</Card.Header>
+            <Card.Header><FaRuler className="me-2" />Badge Settings</Card.Header>
             <Card.Body>
               <Form>
                 <Form.Group className="mb-2">
@@ -807,11 +870,43 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
 
         {/* Center Canvas Area */}
         <main className="badge-designer-canvas-area">
+          {/* Zoom Controls */}
+          <div className="d-flex justify-content-center align-items-center mb-3 gap-2">
+            <Button variant="outline-secondary" size="sm" onClick={handleZoomOut}>
+              <FaMinus /> Zoom Out
+            </Button>
+            <span className="badge bg-light text-dark px-3 py-1">
+              {Math.round(zoomLevel * 100)}%
+            </span>
+            <Button variant="outline-secondary" size="sm" onClick={handleZoomIn}>
+              <FaPlus /> Zoom In
+            </Button>
+            <Button variant="outline-primary" size="sm" onClick={handleZoomReset}>
+              Reset
+            </Button>
+          </div>
+          
           <Card className="designer-panel-card badge-preview-wrapper">
+            <Card.Header className="d-flex justify-content-between align-items-center">
+              <span>Badge Preview</span>
+              <div className="d-flex gap-2">
+                <small className="text-muted">
+                  {template.size?.width || 0} × {template.size?.height || 0} {template.unit || 'in'}
+                </small>
+              </div>
+            </Card.Header>
             <Card.Body 
               ref={canvasWrapperRef}
               className="badge-preview-canvas-body"
-              style={{ position: 'relative', overflow: 'hidden' }}
+              style={{ 
+                position: 'relative', 
+                overflow: 'auto', // Changed from hidden to auto for scrollable canvas
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                minHeight: '400px',
+                backgroundColor: '#f8f9fa' // Light background to distinguish canvas area
+              }}
               onClick={e => {
                 if (e.target === e.currentTarget) setSelectedElement(null);
               }}

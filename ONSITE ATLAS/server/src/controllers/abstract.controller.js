@@ -16,6 +16,7 @@ const asyncHandler = require('../middleware/async');
 const Event = require('../models/Event');
 const Registration = require('../models/Registration');
 const Category = require('../models/Category');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 /**
  * @desc    Get all abstracts for an event OR a specific registrant's abstracts
  * @route   GET /api/events/:eventId/abstracts (for registrant, uses protectRegistrant)
@@ -29,46 +30,46 @@ const getAbstracts = asyncHandler(async (req, res, next) => {
     return next(createApiError(400, 'Event ID is required'));
   }
   filters.event = eventId;
-  if (req.query.category) {
-    filters.category = req.query.category;
+  if (req?.query?.category) {
+    filters.category = req?.query?.category;
   }
   // If finalOnly query param is set, filter to abstracts that have finalFileUrl
-  if (req.query.finalOnly === 'true' || req.query.finalOnly === '1') {
+  if (req?.query?.finalOnly === 'true' || req?.query?.finalOnly === '1') {
     filters.finalFileUrl = { $exists: true, $ne: null };
   }
   // Fetch the event to get embedded abstractSettings.categories
   const event = await Event.findById(eventId);
   let embeddedCategories = [];
-  if (event && event.abstractSettings && Array.isArray(event.abstractSettings.categories)) {
-    embeddedCategories = event.abstractSettings.categories;
+  if (event && event.abstractSettings && Array.isArray(event?.abstractSettings?.categories)) {
+    embeddedCategories = event?.abstractSettings?.categories;
   }
   // Determine access type and apply further filters
-  if (req.registrant && req.registrant._id) {
-    filters.registration = req.registrant._id;
-  } else if (req.author && req.author._id) {
-    filters.author = req.author._id;
-  } else if (req.user && (req.user.role === 'admin' || req.user.role === 'staff' || req.user.role === 'reviewer')) {
-    if (req.query.status) {
-      filters.status = req.query.status;
+  if (req.registrant && req?.registrant?._id) {
+    filters.registration = req?.registrant?._id;
+  } else if (req.author && req?.author?._id) {
+    filters.author = req?.author?._id;
+  } else if (req.user && (req?.user?.role === 'admin' || req?.user?.role === 'staff' || req?.user?.role === 'reviewer')) {
+    if (req?.query?.status) {
+      filters.status = req?.query?.status;
     }
-    if (req.query.category) {
-      filters.category = req.query.category;
+    if (req?.query?.category) {
+      filters.category = req?.query?.category;
     }
-    if (req.query.author) {
-      filters.author = req.query.author;
+    if (req?.query?.author) {
+      filters.author = req?.query?.author;
     }
   } else {
     return next(createApiError(403, 'Not authorized to access this resource'));
   }
   // Pagination params
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 20;
+  const page = parseInt(req?.query?.page, 10) || 1;
+  const limit = parseInt(req?.query?.limit, 10) || 20;
   const skip = (page - 1) * limit;
 
   // If search is present, use aggregation pipeline to support registration fields
-  if (req.query.search && typeof req.query.search === 'string' && req.query.search.trim()) {
-    const searchTerm = req.query.search.trim();
-    console.log('[all-event-abstracts] Search term:', searchTerm);
+  if (req?.query?.search && typeof req?.query?.search === 'string' && req?.query?.search.trim()) {
+    const searchTerm = req?.query?.search.trim();
+    logger.info('[all-event-abstracts] Search term:', searchTerm);
     // Only search on Abstract fields for robust search
     const orFilters = [
       { title: { $regex: searchTerm, $options: 'i' } },
@@ -83,7 +84,7 @@ const getAbstracts = asyncHandler(async (req, res, next) => {
     // Use a simple find with $or for robust search
     filters.$or = orFilters;
     // Debug log for filters
-    console.log('[all-event-abstracts] MongoDB filters (robust):', JSON.stringify(filters));
+    logger.info('[all-event-abstracts] MongoDB filters (robust):', JSON.stringify(filters));
     let [abstracts, total] = await Promise.all([
       Abstract.find(filters)
         .populate('registration', 'registrationId personalInfo')
@@ -94,16 +95,16 @@ const getAbstracts = asyncHandler(async (req, res, next) => {
       Abstract.countDocuments(filters)
     ]);
     // Debug log for number of results
-    console.log(`[all-event-abstracts] Found ${total} abstracts for filters. Returned ${abstracts.length} on this page.`);
+    logger.info(`[all-event-abstracts] Found ${total} abstracts for filters. Returned ${abstracts && abstracts.length} on this page.`);
     function flattenRegistrationInfo(abstract) {
       if (!abstract) return abstract;
-      if (abstract.registration && abstract.registration.registrationId) {
-        abstract.registrationId = abstract.registration.registrationId;
+      if (abstract.registration && abstract?.registration?.registrationId) {
+        abstract.registrationId = abstract?.registration?.registrationId;
       } else if (!abstract.registrationId) {
-        console.warn('[DEBUG] registrationId missing after population:', abstract._id);
+        logger.warn('[DEBUG] registrationId missing after population:', abstract._id);
       }
-      if (abstract.registration && abstract.registration.personalInfo) {
-        abstract.personalInfo = abstract.registration.personalInfo;
+      if (abstract.registration && abstract?.registration?.personalInfo) {
+        abstract.personalInfo = abstract?.registration?.personalInfo;
       }
       return abstract;
     }
@@ -124,7 +125,7 @@ const getAbstracts = asyncHandler(async (req, res, next) => {
         abs.categoryName = match ? match.name : 'N/A';
       });
       abstracts.forEach(abs => {
-        console.log('[all-event-abstracts] Abstract:', abs._id, 'category field:', abs.category, 'categoryName:', abs.categoryName);
+        logger.info('[all-event-abstracts] Abstract:', abs._id, 'category field:', abs.category, 'categoryName:', abs.categoryName);
       });
     }
     return sendPaginated(res, 200, 'Abstracts retrieved successfully', abstracts, page, limit, total);
@@ -132,7 +133,7 @@ const getAbstracts = asyncHandler(async (req, res, next) => {
   // ... existing code ...
 
   // Debug log for filters
-  console.log('[all-event-abstracts] MongoDB filters:', JSON.stringify(filters));
+  logger.info('[all-event-abstracts] MongoDB filters:', JSON.stringify(filters));
   // Populate fields
   let [abstracts, total] = await Promise.all([
     Abstract.find(filters)
@@ -144,16 +145,16 @@ const getAbstracts = asyncHandler(async (req, res, next) => {
     Abstract.countDocuments(filters)
   ]);
   // Debug log for number of results
-  console.log(`[all-event-abstracts] Found ${total} abstracts for filters. Returned ${abstracts.length} on this page.`);
+  logger.info(`[all-event-abstracts] Found ${total} abstracts for filters. Returned ${abstracts && abstracts.length} on this page.`);
   function flattenRegistrationInfo(abstract) {
     if (!abstract) return abstract;
-    if (abstract.registration && abstract.registration.registrationId) {
-      abstract.registrationId = abstract.registration.registrationId;
+    if (abstract.registration && abstract?.registration?.registrationId) {
+      abstract.registrationId = abstract?.registration?.registrationId;
     } else if (!abstract.registrationId) {
-      console.warn('[DEBUG] registrationId missing after population:', abstract._id);
+      logger.warn('[DEBUG] registrationId missing after population:', abstract._id);
     }
-    if (abstract.registration && abstract.registration.personalInfo) {
-      abstract.personalInfo = abstract.registration.personalInfo;
+    if (abstract.registration && abstract?.registration?.personalInfo) {
+      abstract.personalInfo = abstract?.registration?.personalInfo;
     }
     return abstract;
   }
@@ -174,7 +175,7 @@ const getAbstracts = asyncHandler(async (req, res, next) => {
       abs.categoryName = match ? match.name : 'N/A';
     });
     abstracts.forEach(abs => {
-      console.log('[all-event-abstracts] Abstract:', abs._id, 'category field:', abs.category, 'categoryName:', abs.categoryName);
+      logger.info('[all-event-abstracts] Abstract:', abs._id, 'category field:', abs.category, 'categoryName:', abs.categoryName);
     });
   }
   // Fix: Pass correct arguments to sendPaginated (status, message, data, page, limit, total)
@@ -190,10 +191,10 @@ const getAbstractsByRegistration = asyncHandler(async (req, res, next) => {
   const { eventId, registrationId } = req.params;
   const { status } = req.query;
 
-  if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
+  if (!eventId || !mongoose?.Types?.ObjectId.isValid(eventId)) {
     return next(createApiError(400, 'Valid Event ID is required'));
   }
-  if (!registrationId || !mongoose.Types.ObjectId.isValid(registrationId)) {
+  if (!registrationId || !mongoose?.Types?.ObjectId.isValid(registrationId)) {
     return next(createApiError(400, 'Valid Registration ID is required'));
   }
 
@@ -210,12 +211,12 @@ const getAbstractsByRegistration = asyncHandler(async (req, res, next) => {
   }
 
   // Ensure the registration belongs to the event (important consistency check)
-  if (registration.event.toString() !== eventId) {
+  if (registration?.event?.toString() !== eventId) {
     logger.warn(`[getAbstractsByRegistration] Registration ${registrationId} does not belong to event ${eventId}.`);
     return next(createApiError(`Registration ${registrationId} is not associated with event ${eventId}.`, 400));
   }
 
-  logger.info(`[getAbstractsByRegistration] Admin/Staff ${req.user._id} fetching abstracts for registration ${registrationId} in event ${eventId} with status: ${status}`);
+  logger.info(`[getAbstractsByRegistration] Admin/Staff ${req?.user?._id} fetching abstracts for registration ${registrationId} in event ${eventId} with status: ${status}`);
 
   // Build query
   let query = { event: eventId, registration: registrationId };
@@ -230,19 +231,19 @@ const getAbstractsByRegistration = asyncHandler(async (req, res, next) => {
     .populate('author', 'name email')
     .sort({ createdAt: -1 });
 
-  logger.info(`[getAbstractsByRegistration] Found ${abstracts.length} abstracts for registration ${registrationId} in event ${eventId} with status: ${status}`);
+  logger.info(`[getAbstractsByRegistration] Found ${abstracts && abstracts.length} abstracts for registration ${registrationId} in event ${eventId} with status: ${status}`);
 
   // Utility to flatten registrationId and personalInfo on each abstract
   function flattenRegistrationInfo(abstract) {
     if (!abstract) return abstract;
-    if (abstract.registration && abstract.registration.registrationId) {
-      abstract.registrationId = abstract.registration.registrationId;
+    if (abstract.registration && abstract?.registration?.registrationId) {
+      abstract.registrationId = abstract?.registration?.registrationId;
     } else if (!abstract.registrationId) {
       // Log if missing
-      console.warn('[DEBUG] registrationId missing after population:', abstract._id);
+      logger.warn('[DEBUG] registrationId missing after population:', abstract._id);
     }
-    if (abstract.registration && abstract.registration.personalInfo) {
-      abstract.personalInfo = abstract.registration.personalInfo;
+    if (abstract.registration && abstract?.registration?.personalInfo) {
+      abstract.personalInfo = abstract?.registration?.personalInfo;
     }
     return abstract;
   }
@@ -257,7 +258,7 @@ const getAbstractsByRegistration = asyncHandler(async (req, res, next) => {
     return sendSuccess(res, 200, 'No abstracts found for this registration in this event.', []);
   }
 
-  return sendSuccess(res, 200, 'Abstracts retrieved successfully for the specified registration.', abstracts, abstracts.length);
+  return sendSuccess(res, 200, 'Abstracts retrieved successfully for the specified registration.', abstracts, abstracts && abstracts.length);
 });
 
 /**
@@ -266,28 +267,27 @@ const getAbstractsByRegistration = asyncHandler(async (req, res, next) => {
  * @access  Protected (Registrant Owner or Admin/Staff/Reviewer)
  */
 exports.getAbstract = asyncHandler(async (req, res, next) => {
-  const abstractId = req.params.id;
+  const abstractId = req?.params?.id;
   const abstract = await Abstract.findById(abstractId)
-    // Add relevant population
     .populate('registration', 'registrationId personalInfo') 
     .populate('category', 'name')
     .populate('author', 'name email');
 
   if (!abstract) {
-    return next(createApiError(`Abstract not found with id of ${abstractId}`, 404));
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
   }
 
   let isAuthorized = false;
 
   // Check Admin/Staff/Reviewer access via req.user
-  if (req.user && ('admin' === req.user.role || 'staff' === req.user.role || 'reviewer' === req.user.role)) {
+  if (req.user && ('admin' === req?.user?.role || 'staff' === req?.user?.role || 'reviewer' === req?.user?.role)) {
     isAuthorized = true;
-    logger.info(`[getAbstract] Admin/Staff/Reviewer ${req.user._id} accessing abstract ${abstractId}`);
+    logger.info(`[getAbstract] Admin/Staff/Reviewer ${req?.user?._id} accessing abstract ${abstractId}`);
   }
   // Check Registrant owner access via req.registrant
-  else if (req.registrant && abstract.registration && abstract.registration.equals(req.registrant._id)) {
+  else if (req.registrant && abstract.registration && abstract?.registration?.equals(req?.registrant?._id)) {
     isAuthorized = true;
-    logger.info(`[getAbstract] Registrant owner ${req.registrant._id} accessing abstract ${abstractId}`);
+    logger.info(`[getAbstract] Registrant owner ${req?.registrant?._id} accessing abstract ${abstractId}`);
   }
 
   if (!isAuthorized) {
@@ -297,11 +297,11 @@ exports.getAbstract = asyncHandler(async (req, res, next) => {
   }
 
   // For single abstract fetches:
-  if (abstract && abstract.registration && abstract.registration.registrationId) {
-    abstract.registrationId = abstract.registration.registrationId;
+  if (abstract && abstract.registration && abstract?.registration?.registrationId) {
+    abstract.registrationId = abstract?.registration?.registrationId;
   }
-  if (abstract && abstract.registration && abstract.registration.personalInfo) {
-    abstract.personalInfo = abstract.registration.personalInfo;
+  if (abstract && abstract.registration && abstract?.registration?.personalInfo) {
+    abstract.personalInfo = abstract?.registration?.personalInfo;
   }
 
   return sendSuccess(res, 200, 'Abstract retrieved successfully', abstract);
@@ -315,14 +315,16 @@ exports.getAbstract = asyncHandler(async (req, res, next) => {
  */
 exports.createAbstract = asyncHandler(async (req, res, next) => {
   try {
-    // console.log('Create abstract request body:', req.body); // Keep for debugging if needed
+    // logger.info('Create abstract request body:', req.body); // Keep for debugging if needed
     
-    if (req.params.eventId) {
+    if (req?.params?.eventId) {
+      // Fix: Don't use optional chaining in assignment
+      if (!req.body) req.body = {};
       req.body.event = req.params.eventId;
     }
 
-    const eventId = req.body.event || req.body.eventId;
-    const registrationId = req.body.registration || req.body.registrationId;
+    const eventId = req?.body?.event || req?.body?.eventId;
+    const registrationId = req?.body?.registration || req?.body?.registrationId;
     
     if (!eventId || (typeof eventId !== 'string' && typeof eventId !== 'object')) {
       return next(new ErrorResponse('Invalid or missing event ID', 400));
@@ -352,33 +354,33 @@ exports.createAbstract = asyncHandler(async (req, res, next) => {
       event: eventId,
       // registration only if available (post-registration flow)
       registration: registrationId || undefined,
-      author: isAuthorFlow ? req.author._id : undefined,
+      author: isAuthorFlow ? req?.author?._id : undefined,
       submissionPath: isAuthorFlow ? 'pre-registration' : 'post-registration',
-      title: req.body.title || 'Untitled Abstract',
-      authors: req.body.authors || 'Anonymous',
-      authorAffiliations: req.body.authorAffiliations || req.body.affiliations || '',
-      topic: req.body.topic || '',
-      subTopic: req.body.subTopic || '',
-      content: req.body.content || 'Abstract content',
-      category: req.body.category || null,
-      wordCount: req.body.content ? req.body.content.trim().split(/\s+/).length : 0
+      title: req?.body?.title || 'Untitled Abstract',
+      authors: req?.body?.authors || 'Anonymous',
+      authorAffiliations: req?.body?.authorAffiliations || req?.body?.affiliations || '',
+      topic: req?.body?.topic || '',
+      subTopic: req?.body?.subTopic || '',
+      content: req?.body?.content || 'Abstract content',
+      category: req?.body?.category || null,
+      wordCount: req?.body?.content ? req?.body?.content.trim && req?.body?.content.trim().split(/\s+/).length : 0
     };
 
-    if (!event.abstractSettings || !event.abstractSettings.enabled) {
+    if (!event.abstractSettings || !event?.abstractSettings?.enabled) {
       return next(new ErrorResponse('Abstract submissions are not enabled for this event', 400));
     }
-    if (!event.abstractSettings.isOpen) {
+    if (!event?.abstractSettings?.isOpen) {
       return next(new ErrorResponse('Abstract submissions are not currently open for this event', 400));
     }
-    if (event.abstractSettings.deadline) {
-      const deadline = new Date(event.abstractSettings.deadline);
+    if (event?.abstractSettings?.deadline) {
+      const deadline = new Date(event?.abstractSettings?.deadline);
       const now = new Date();
       if (now > deadline) {
         return next(new ErrorResponse('Abstract submission deadline has passed', 400));
       }
     }
     if (abstractData.content) {
-      const maxLength = event.abstractSettings.maxLength || 500;
+      const maxLength = event?.abstractSettings?.maxLength || 500;
       if (abstractData.wordCount > maxLength) {
         return next(new ErrorResponse(`Abstract exceeds maximum word count of ${maxLength}`, 400));
       }
@@ -391,19 +393,19 @@ exports.createAbstract = asyncHandler(async (req, res, next) => {
     // logger.info(`Abstract ${abstract._id} created. Email confirmation handled by workflow controller if applicable.`);
 
     // Auto-assign reviewers based on category
-    if (abstract.category && event.abstractSettings && Array.isArray(event.abstractSettings.categories)) {
+    if (abstract.category && event.abstractSettings && Array.isArray(event?.abstractSettings?.categories)) {
       let catId = abstract.category;
       if (catId && typeof catId === 'object' && catId.$oid) catId = catId.$oid;
       else if (catId && catId._id) catId = catId._id;
       else if (catId) catId = String(catId);
-      const match = event.abstractSettings.categories.find(cat => {
+      const match = event?.abstractSettings?.categories.find(cat => {
         let embeddedId = cat._id;
         if (embeddedId && typeof embeddedId === 'object' && embeddedId.$oid) embeddedId = embeddedId.$oid;
         else if (embeddedId && embeddedId._id) embeddedId = embeddedId._id;
         else if (embeddedId) embeddedId = String(embeddedId);
         return embeddedId === catId;
       });
-      if (match && Array.isArray(match.reviewerIds) && match.reviewerIds.length > 0) {
+      if (match && Array.isArray(match.reviewerIds) && match?.reviewerIds?.length > 0) {
         abstract.reviewDetails = abstract.reviewDetails || {};
         abstract.reviewDetails.assignedTo = match.reviewerIds.map(id => id.toString());
         await abstract.save();
@@ -414,14 +416,14 @@ exports.createAbstract = asyncHandler(async (req, res, next) => {
     try {
       let recipientEmail='', firstName='Author';
       if(isAuthorFlow && req.author){
-        recipientEmail = req.author.email;
-        firstName = req.author.name?.split(' ')[0] || 'Author';
+        recipientEmail = req?.author?.email;
+        firstName = req?.author?.name?.split(' ')[0] || 'Author';
       } else if(registration){
-        recipientEmail = registration.personalInfo.email;
-        firstName = registration.personalInfo.firstName || 'Participant';
+        recipientEmail = registration?.personalInfo?.email;
+        firstName = registration?.personalInfo?.firstName || 'Participant';
       }
       if(recipientEmail && event.emailSettings?.enabled){
-        const tmpl = event.emailSettings.templates?.abstractSubmission;
+        const tmpl = event?.emailSettings?.templates?.abstractSubmission;
         const placeholderData={
           firstName,
           eventName: event.name,
@@ -434,15 +436,15 @@ exports.createAbstract = asyncHandler(async (req, res, next) => {
           to: recipientEmail,
           subject: subj,
           html: bodyRaw,
-          fromName: event.emailSettings.senderName,
-          fromEmail: event.emailSettings.senderEmail,
+          fromName: event?.emailSettings?.senderName,
+          fromEmail: event?.emailSettings?.senderEmail,
           smtp: {
-            host: event.emailSettings.smtpHost,
-            port: event.emailSettings.smtpPort,
-            secure: event.emailSettings.smtpSecure,
+            host: event?.emailSettings?.smtpHost,
+            port: event?.emailSettings?.smtpPort,
+            secure: event?.emailSettings?.smtpSecure,
             auth: {
-              user: event.emailSettings.smtpUser,
-              pass: event.emailSettings.smtpPassword
+              user: event?.emailSettings?.smtpUser,
+              pass: event?.emailSettings?.smtpPassword
             }
           }
         });
@@ -464,7 +466,7 @@ exports.createAbstract = asyncHandler(async (req, res, next) => {
  * @access  Protected (Registrant Owner or Admin/Staff)
  */
 exports.updateAbstract = asyncHandler(async (req, res, next) => {
-  const abstractId = req.params.id;
+  const abstractId = req?.params?.id;
   let abstract = await Abstract.findById(abstractId);
 
   if (!abstract) {
@@ -476,38 +478,38 @@ exports.updateAbstract = asyncHandler(async (req, res, next) => {
   const editableStatuses = ['draft', 'submitted', 'revision-requested']; // Statuses where owner can edit
 
   // Check Admin/Staff access via req.user
-  if (req.user && (req.user.role === 'admin' || req.user.role === 'staff')) {
+  if (req.user && (req?.user?.role === 'admin' || req?.user?.role === 'staff')) {
     isAuthorized = true;
     canEdit = true; // Admins/Staff can edit regardless of status
-    logger.info(`[updateAbstract] Admin/Staff ${req.user._id} updating abstract ${abstractId}`);
+    logger.info(`[updateAbstract] Admin/Staff ${req?.user?._id} updating abstract ${abstractId}`);
   }
   // Check Registrant owner access via req.registrant
-  else if (req.registrant && abstract.registration && abstract.registration.equals(req.registrant._id)) {
-     logger.info(`[updateAbstract] Registrant owner ${req.registrant._id} attempting update for abstract ${abstractId}`);
+  else if (req.registrant && abstract.registration && abstract?.registration?.equals(req?.registrant?._id)) {
+     logger.info(`[updateAbstract] Registrant owner ${req?.registrant?._id} attempting update for abstract ${abstractId}`);
     isAuthorized = true;
     const event = await Event.findById(abstract.event);
-    if (event && event.abstractSettings && !event.abstractSettings.allowEditing) {
-        logger.warn(`[updateAbstract] Registrant ${req.registrant._id} cannot edit abstract ${abstractId} as editing is disallowed by event settings.`);
+    if (event && event.abstractSettings && !event?.abstractSettings?.allowEditing) {
+        logger.warn(`[updateAbstract] Registrant ${req?.registrant?._id} cannot edit abstract ${abstractId} as editing is disallowed by event settings.`);
         return next(createApiError(400, 'Editing is not allowed for abstracts in this event.'));
     }
     if (editableStatuses.includes(abstract.status)) {
         canEdit = true;
     } else {
-        logger.warn(`[updateAbstract] Registrant ${req.registrant._id} cannot edit abstract ${abstractId} due to status: ${abstract.status}`);
+        logger.warn(`[updateAbstract] Registrant ${req?.registrant?._id} cannot edit abstract ${abstractId} due to status: ${abstract.status}`);
         return next(createApiError(`Abstract cannot be edited in its current status: ${abstract.status}`, 400));
     }
-  } else if (req.author && abstract.author && abstract.author.equals(req.author._id)) {
-     logger.info(`[updateAbstract] Author owner ${req.author._id} attempting update for abstract ${abstractId}`);
+  } else if (req.author && abstract.author && abstract?.author?.equals(req?.author?._id)) {
+     logger.info(`[updateAbstract] Author owner ${req?.author?._id} attempting update for abstract ${abstractId}`);
     isAuthorized = true;
     const event = await Event.findById(abstract.event);
-    if (event && event.abstractSettings && !event.abstractSettings.allowEditing) {
-        logger.warn(`[updateAbstract] Author ${req.author._id} cannot edit abstract ${abstractId} as editing is disallowed by event settings.`);
+    if (event && event.abstractSettings && !event?.abstractSettings?.allowEditing) {
+        logger.warn(`[updateAbstract] Author ${req?.author?._id} cannot edit abstract ${abstractId} as editing is disallowed by event settings.`);
         return next(createApiError(400, 'Editing is not allowed for abstracts in this event.'));
     }
     if (editableStatuses.includes(abstract.status)) {
         canEdit = true;
     } else {
-        logger.warn(`[updateAbstract] Author ${req.author._id} cannot edit abstract ${abstractId} due to status: ${abstract.status}`);
+        logger.warn(`[updateAbstract] Author ${req?.author?._id} cannot edit abstract ${abstractId} due to status: ${abstract.status}`);
         return next(createApiError(`Abstract cannot be edited in its current status: ${abstract.status}`, 400));
     }
   } else {
@@ -539,7 +541,7 @@ exports.updateAbstract = asyncHandler(async (req, res, next) => {
   }
 
   // If an admin is explicitly setting fileUrl to null or empty, it means they want to remove the file.
-  if (req.user && (req.user.role === 'admin' || req.user.role === 'staff') && 
+  if (req.user && (req?.user?.role === 'admin' || req?.user?.role === 'staff') && 
       oldFileUrl && (updateData.fileUrl === null || updateData.fileUrl === '')) {
     const relPath = oldFileUrl.replace(/^\/?uploads[\/]/, '');
     const filePath = path.join(UPLOADS_BASE_DIR, relPath);
@@ -554,7 +556,7 @@ exports.updateAbstract = asyncHandler(async (req, res, next) => {
         updateData.fileType = null;
       }
     });
-  } else if (req.user && (req.user.role === 'admin' || req.user.role === 'staff') && updateData.fileUrl && updateData.fileUrl !== oldFileUrl) {
+  } else if (req.user && (req?.user?.role === 'admin' || req?.user?.role === 'staff') && updateData.fileUrl && updateData.fileUrl !== oldFileUrl) {
     // Admin is changing the fileUrl directly - this is discouraged, uploadAbstractFile should be used.
     // However, if they do, and there was an old file, attempt to delete it.
     // This part is risky if the new fileUrl isn't managed properly by an upload process.
@@ -568,16 +570,16 @@ exports.updateAbstract = asyncHandler(async (req, res, next) => {
             }
         });
     }
-    logger.warn(`[updateAbstract] Admin ${req.user._id} changed fileUrl directly for abstract ${abstractId}. This is not the recommended way to update files.`);
+    logger.warn(`[updateAbstract] Admin ${req?.user?._id} changed fileUrl directly for abstract ${abstractId}. This is not the recommended way to update files.`);
   }
   
   // Word count check from event settings if content is being updated
-  if (updateData.content && ((req.user && (req.user.role === 'admin' || req.user.role === 'staff')) || req.registrant)) {
+  if (updateData.content && ((req.user && (req?.user?.role === 'admin' || req?.user?.role === 'staff')) || req.registrant)) {
     const event = await Event.findById(abstract.event);
-    if (event && event.abstractSettings && event.abstractSettings.maxLength) {
-        const wordCount = updateData.content.trim().split(/\s+/).length;
-        if (wordCount > event.abstractSettings.maxLength) {
-            return next(createApiError(`Abstract content exceeds the maximum word count of ${event.abstractSettings.maxLength}.`, 400));
+    if (event && event.abstractSettings && event?.abstractSettings?.maxLength) {
+        const wordCount = updateData?.content?.trim().split(/\s+/).length;
+        if (wordCount > event?.abstractSettings?.maxLength) {
+            return next(createApiError(`Abstract content exceeds the maximum word count of ${event?.abstractSettings?.maxLength}.`, 400));
         }
         updateData.wordCount = wordCount; // Update word count if content changes
     }
@@ -597,7 +599,7 @@ exports.updateAbstract = asyncHandler(async (req, res, next) => {
  * @access  Protected (Registrant Owner or Admin/Staff)
  */
 exports.deleteAbstract = asyncHandler(async (req, res, next) => {
-  const abstractId = req.params.id;
+  const abstractId = req?.params?.id;
   const abstract = await Abstract.findById(abstractId);
 
   if (!abstract) {
@@ -607,14 +609,14 @@ exports.deleteAbstract = asyncHandler(async (req, res, next) => {
   let isAuthorized = false;
 
   // Check Admin/Staff access via req.user
-  if (req.user && (req.user.role === 'admin' || req.user.role === 'staff')) {
+  if (req.user && (req?.user?.role === 'admin' || req?.user?.role === 'staff')) {
     isAuthorized = true;
-    logger.info(`[deleteAbstract] Admin/Staff ${req.user._id} deleting abstract ${abstractId}`);
+    logger.info(`[deleteAbstract] Admin/Staff ${req?.user?._id} deleting abstract ${abstractId}`);
   }
   // Check Registrant owner access via req.registrant
-  else if (req.registrant && abstract.registration && abstract.registration.equals(req.registrant._id)) {
+  else if (req.registrant && abstract.registration && abstract?.registration?.equals(req?.registrant?._id)) {
         isAuthorized = true;
-    logger.info(`[deleteAbstract] Registrant owner ${req.registrant._id} deleting abstract ${abstractId}`);
+    logger.info(`[deleteAbstract] Registrant owner ${req?.registrant?._id} deleting abstract ${abstractId}`);
   }
 
   if (!isAuthorized) {
@@ -624,7 +626,7 @@ exports.deleteAbstract = asyncHandler(async (req, res, next) => {
 
   // Physical file deletion
   if (abstract.fileUrl) {
-    const filePath = path.join(UPLOADS_BASE_DIR, abstract.fileUrl.replace(/^\/uploads[\/]/, ''));
+    const filePath = path.join(UPLOADS_BASE_DIR, abstract?.fileUrl?.replace(/^\/uploads[\/]/, ''));
     fs.unlink(filePath, (err) => {
       if (err) {
         // Log the error but don't necessarily block the abstract deletion
@@ -647,16 +649,19 @@ exports.deleteAbstract = asyncHandler(async (req, res, next) => {
  * @access  Private/Admin
  */
 exports.updateAbstractStatus = asyncHandler(async (req, res, next) => {
-  const { status } = req.body;
+  const { status  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
 
   if (!status || !['draft', 'submitted', 'under-review', 'approved', 'rejected'].includes(status)) {
     return next(new ErrorResponse('Please provide a valid status', 400));
   }
 
-  const abstract = await Abstract.findById(req.params.id);
+  const abstract = await Abstract.findById(req?.params?.id);
 
   if (!abstract) {
-    return next(new ErrorResponse(`Abstract not found with id of ${req.params.id}`, 404));
+    return next(new ErrorResponse(`Abstract not found with id of ${req?.params?.id}`, 404));
   }
 
   // Update status
@@ -672,21 +677,24 @@ exports.updateAbstractStatus = asyncHandler(async (req, res, next) => {
  * @access  Private/Admin
  */
 exports.addReviewComment = asyncHandler(async (req, res, next) => {
-  const { comment } = req.body;
+  const { comment  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
 
   if (!comment) {
     return next(new ErrorResponse('Please provide a comment', 400));
   }
 
-  const abstract = await Abstract.findById(req.params.id);
+  const abstract = await Abstract.findById(req?.params?.id);
 
   if (!abstract) {
-    return next(new ErrorResponse(`Abstract not found with id of ${req.params.id}`, 404));
+    return next(new ErrorResponse(`Abstract not found with id of ${req?.params?.id}`, 404));
   }
 
   // Add comment
-  abstract.reviewComments.push({
-    userId: req.user.id,
+  abstract?.reviewComments?.push({
+    userId: req?.user?.id,
     comment
   });
 
@@ -701,7 +709,7 @@ exports.addReviewComment = asyncHandler(async (req, res, next) => {
  * @access  Protected (Registrant Owner or Admin/Staff)
  */
 exports.uploadAbstractFile = asyncHandler(async (req, res, next) => {
-  const abstractId = req.params.id;
+  const abstractId = req?.params?.id;
   const abstract = await Abstract.findById(abstractId);
 
   if (!abstract) {
@@ -713,31 +721,31 @@ exports.uploadAbstractFile = asyncHandler(async (req, res, next) => {
   const editableStatuses = ['draft', 'submitted', 'revision-requested']; // Added revision-requested
 
   // Check Admin/Staff access via req.user
-  if (req.user && (req.user.role === 'admin' || req.user.role === 'staff')) {
+  if (req.user && (req?.user?.role === 'admin' || req?.user?.role === 'staff')) {
     isAuthorized = true;
     canUpload = true; // Admins/Staff can upload regardless of status
-    logger.info(`[uploadAbstractFile] Admin/Staff ${req.user._id} uploading file for abstract ${abstractId}`);
+    logger.info(`[uploadAbstractFile] Admin/Staff ${req?.user?._id} uploading file for abstract ${abstractId}`);
   }
   // Check Registrant owner access via req.registrant
-  else if (req.registrant && abstract.registration && abstract.registration.equals(req.registrant._id)) {
-    logger.info(`[uploadAbstractFile] Registrant owner ${req.registrant._id} attempting upload for abstract ${abstractId}`);
+  else if (req.registrant && abstract.registration && abstract?.registration?.equals(req?.registrant?._id)) {
+    logger.info(`[uploadAbstractFile] Registrant owner ${req?.registrant?._id} attempting upload for abstract ${abstractId}`);
     isAuthorized = true;
     // Registrants can only upload if status allows
     if (editableStatuses.includes(abstract.status)) {
         canUpload = true;
     } else {
-        logger.warn(`[uploadAbstractFile] Registrant ${req.registrant._id} cannot upload file for abstract ${abstractId} due to status: ${abstract.status}`);
+        logger.warn(`[uploadAbstractFile] Registrant ${req?.registrant?._id} cannot upload file for abstract ${abstractId} due to status: ${abstract.status}`);
         return next(createApiError(`Cannot upload file for abstract in its current status: ${abstract.status}`, 400));
     }
   } else {
     // Check Author owner access via req.author (pre-registration submissions)
-    if (req.author && abstract.author && abstract.author.equals(req.author._id)) {
-      logger.info(`[uploadAbstractFile] Author owner ${req.author._id} attempting upload for abstract ${abstractId}`);
+    if (req.author && abstract.author && abstract?.author?.equals(req?.author?._id)) {
+      logger.info(`[uploadAbstractFile] Author owner ${req?.author?._id} attempting upload for abstract ${abstractId}`);
       isAuthorized = true;
       if (editableStatuses.includes(abstract.status)) {
         canUpload = true;
       } else {
-        logger.warn(`[uploadAbstractFile] Author ${req.author._id} cannot upload file for abstract ${abstractId} due to status: ${abstract.status}`);
+        logger.warn(`[uploadAbstractFile] Author ${req?.author?._id} cannot upload file for abstract ${abstractId} due to status: ${abstract.status}`);
         return next(createApiError(`Cannot upload file for abstract in its current status: ${abstract.status}`, 400));
       }
     }
@@ -755,11 +763,11 @@ exports.uploadAbstractFile = asyncHandler(async (req, res, next) => {
       return next(createApiError(`Cannot upload file for abstract in its current status: ${abstract.status}`, 400));
   }
 
-  if (!req.files || !req.files.file) {
+  if (!req.files || !req?.files?.file) {
     return next(createApiError(400, 'No file uploaded'));
   }
 
-  const file = req.files.file;
+  const file = req?.files?.file;
   const eventId = abstract.event; // Get eventId from the abstract to fetch event-specific settings
   const event = await Event.findById(eventId);
 
@@ -769,9 +777,9 @@ exports.uploadAbstractFile = asyncHandler(async (req, res, next) => {
   }
 
   // Use event-specific settings or defaults
-  const maxSizeMB = event.abstractSettings.maxFileSizeMB || 10; // Default to 10MB if not set
+  const maxSizeMB = event?.abstractSettings?.maxFileSizeMB || 10; // Default to 10MB if not set
   const maxSize = maxSizeMB * 1024 * 1024;
-  const allowedFileTypes = event.abstractSettings.allowedFileTypes || ['.pdf', '.doc', '.docx', '.ppt', '.pptx']; // Default if not set
+  const allowedFileTypes = event?.abstractSettings?.allowedFileTypes || ['.pdf', '.doc', '.docx', '.ppt', '.pptx']; // Default if not set
 
   if (file.size > maxSize) {
     return next(createApiError(`File size cannot exceed ${maxSizeMB}MB`, 400));
@@ -784,7 +792,7 @@ exports.uploadAbstractFile = asyncHandler(async (req, res, next) => {
 
   // Delete old file if it exists
   if (abstract.fileUrl) {
-    const oldFilePath = path.join(UPLOADS_BASE_DIR, abstract.fileUrl.replace(/^\/uploads[\/]/, ''));
+    const oldFilePath = path.join(UPLOADS_BASE_DIR, abstract?.fileUrl?.replace(/^\/uploads[\/]/, ''));
     fs.unlink(oldFilePath, (err) => {
       if (err) {
         logger.error(`[uploadAbstractFile] Failed to delete old physical file ${oldFilePath}: ${err.message}`);
@@ -796,7 +804,7 @@ exports.uploadAbstractFile = asyncHandler(async (req, res, next) => {
 
   const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
   const newFileName = `abstract_${abstract._id}_${uniqueSuffix}${fileExt}`;
-  const uploadDir = buildUploadDir('abstracts', event._id.toString());
+  const uploadDir = buildUploadDir('abstracts', event?._id?.toString());
   const newFilePath = path.join(uploadDir, newFileName);
   logger.info(`[uploadAbstractFile] uploadDir: ${uploadDir}`);
   logger.info(`[uploadAbstractFile] newFilePath: ${newFilePath}`);
@@ -809,7 +817,7 @@ exports.uploadAbstractFile = asyncHandler(async (req, res, next) => {
     await file.mv(newFilePath);
     logger.info(`[uploadAbstractFile] File moved successfully to ${newFilePath}`);
 
-    abstract.fileUrl = buildFileUrl('abstracts', event._id.toString(), newFileName); 
+    abstract.fileUrl = buildFileUrl('abstracts', event?._id?.toString(), newFileName); 
     abstract.fileName = file.name;
     abstract.fileSize = file.size;
       abstract.fileType = fileExt.substring(1); 
@@ -838,15 +846,15 @@ exports.uploadAbstractFile = asyncHandler(async (req, res, next) => {
  * @query   reviewer=UserId (optional) - Only include abstracts reviewed by this reviewer
  */
 exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
-  const eventId = req.params.eventId;
-  const exportMode = req.query.exportMode || null; // 'excel-single', 'excel-multi', or null
-  const filterCategory = req.query.category || null;
-  const filterTopic = req.query.topic || null;
-  const filterStatus = req.query.status || null;
-  const minScore = req.query.minScore !== undefined ? parseFloat(req.query.minScore) : null;
-  const maxScore = req.query.maxScore !== undefined ? parseFloat(req.query.maxScore) : null;
-  const reviewerId = req.query.reviewer || null;
-  const finalOnly = req.query.finalOnly === 'true' || req.query.finalOnly === '1';
+  const eventId = req?.params?.eventId;
+  const exportMode = req?.query?.exportMode || null; // 'excel-single', 'excel-multi', or null
+  const filterCategory = req?.query?.category || null;
+  const filterTopic = req?.query?.topic || null;
+  const filterStatus = req?.query?.status || null;
+  const minScore = req?.query?.minScore !== undefined ? parseFloat(req?.query?.minScore) : null;
+  const maxScore = req?.query?.maxScore !== undefined ? parseFloat(req?.query?.maxScore) : null;
+  const reviewerId = req?.query?.reviewer || null;
+  const finalOnly = req?.query?.finalOnly === 'true' || req?.query?.finalOnly === '1';
 
   // Get event to validate it exists
   const event = await Event.findById(eventId);
@@ -875,14 +883,14 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
   // Utility to flatten registrationId and personalInfo on each abstract
   function flattenRegistrationInfo(abstract) {
     if (!abstract) return abstract;
-    if (abstract.registration && abstract.registration.registrationId) {
-      abstract.registrationId = abstract.registration.registrationId;
+    if (abstract.registration && abstract?.registration?.registrationId) {
+      abstract.registrationId = abstract?.registration?.registrationId;
     } else if (!abstract.registrationId) {
       // Log if missing
-      console.warn('[DEBUG] registrationId missing after population:', abstract._id);
+      logger.warn('[DEBUG] registrationId missing after population:', abstract._id);
     }
-    if (abstract.registration && abstract.registration.personalInfo) {
-      abstract.personalInfo = abstract.registration.personalInfo;
+    if (abstract.registration && abstract?.registration?.personalInfo) {
+      abstract.personalInfo = abstract?.registration?.personalInfo;
     }
     return abstract;
   }
@@ -895,12 +903,12 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
   // Score and reviewer filtering (in-memory, since reviews are subdocuments)
   if (minScore !== null || maxScore !== null || reviewerId) {
     abstracts = abstracts.filter(abs => {
-      if (!abs.reviewDetails || !Array.isArray(abs.reviewDetails.reviews)) return false;
-      return abs.reviewDetails.reviews.some(r => {
+      if (!abs.reviewDetails || !Array.isArray(abs?.reviewDetails?.reviews)) return false;
+      return abs?.reviewDetails?.reviews.some(r => {
         if (typeof r.score !== 'number' && (minScore !== null || maxScore !== null)) return false;
         if (minScore !== null && r.score < minScore) return false;
         if (maxScore !== null && r.score > maxScore) return false;
-        if (reviewerId && (!r.reviewer || r.reviewer.toString() !== reviewerId)) return false;
+        if (reviewerId && (!r.reviewer || r?.reviewer?.toString() !== reviewerId)) return false;
         return true;
       });
     });
@@ -912,7 +920,7 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
 
   // --- NEW: If files-only export is requested, send ZIP with only uploaded files ---
   if (exportMode === 'files-only') {
-    console.log('[abstract.controller] Processing files-only export mode');
+    logger.info('[abstract.controller] Processing files-only export mode');
     const sanitize = (name) => name.replace(/[^a-zA-Z0-9_.-]/g, '_').substring(0, 50);
     const zipFileName = `abstracts_files_${sanitize(event.name)}_${Date.now()}.zip`;
     const zipFilePath = buildUploadDir('temp', zipFileName);
@@ -925,12 +933,12 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
     
     // Set up completion handler
     output.on('close', () => {
-      console.log('[abstract.controller] Files-only ZIP archive completed');
+      logger.info('[abstract.controller] Files-only ZIP archive completed');
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', `attachment; filename="${zipFileName}"`);
       res.download(zipFilePath, zipFileName, (err) => {
         if (err) {
-          console.error('Error sending zip file:', err);
+          logger.error('Error sending zip file:', error);
         }
         fs.unlinkSync(zipFilePath);
       });
@@ -939,21 +947,21 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
     // Set up error handlers
     archive.on('warning', (err) => {
       if (err.code === 'ENOENT') {
-        console.warn('Archive warning:', err);
+        logger.warn('Archive warning:', err);
       } else {
-        console.error('Archive error:', err);
+        logger.error('Archive error:', error);
         return next(new ErrorResponse('Error creating archive', 500));
       }
     });
     
     archive.on('error', (err) => {
-      console.error('Archive error:', err);
+      logger.error('Archive error:', error);
       return next(new ErrorResponse('Error creating archive', 500));
     });
     
     archive.pipe(output);
     
-    console.log(`[abstract.controller] Processing ${abstracts.length} abstracts for files-only ZIP`);
+    logger.info(`[abstract.controller] Processing ${abstracts && abstracts.length} abstracts for files-only ZIP`);
     let fileCount = 0;
     
     const includeFinalOnly = finalOnly;
@@ -970,14 +978,14 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
 
       if (!relUrl) continue;
 
-      const regId = abstract.registrationInfo ? abstract.registrationInfo.registrationId : 'unknown';
-      const authorName = abstract.registrationInfo ? `${abstract.registrationInfo.personalInfo.firstName}_${abstract.registrationInfo.personalInfo.lastName}`.replace(/\s+/g, '_') : 'unknown';
+      const regId = abstract.registrationInfo ? abstract?.registrationInfo?.registrationId : 'unknown';
+      const authorName = abstract.registrationInfo ? `${abstract?.registrationInfo?.personalInfo.firstName}_${abstract?.registrationInfo?.personalInfo.lastName}`.replace(/\s+/g, '_') : 'unknown';
       // Determine disk path and extension
       // Remove leading '/uploads/' to avoid duplication when joining with UPLOADS_BASE_DIR
       const relPath = relUrl.replace(/^\/?uploads\//, '');
       const filePath = path.join(UPLOADS_BASE_DIR, relPath);
 
-      console.log(`[abstract.controller] Processing file: ${filePath}`);
+      logger.info(`[abstract.controller] Processing file: ${filePath}`);
 
       if (fs.existsSync(filePath)) {
         fileCount++;
@@ -988,14 +996,14 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
         if (regId !== 'unknown') parts.push(sanitize(regId));
         parts.push(sanitize(authorName));
         const archiveFileName = `${parts.join('_')}${fileExt}`;
-        console.log(`[abstract.controller] Adding file to ZIP: ${archiveFileName}`);
+        logger.info(`[abstract.controller] Adding file to ZIP: ${archiveFileName}`);
         archive.file(filePath, { name: archiveFileName });
       } else {
-        console.warn(`[abstract.controller] File not found: ${filePath}`);
+        logger.warn(`[abstract.controller] File not found: ${filePath}`);
       }
     }
     
-    console.log(`[abstract.controller] Added ${fileCount} files to the ZIP archive`);
+    logger.info(`[abstract.controller] Added ${fileCount} files to the ZIP archive`);
     archive.finalize();
     return;
   }
@@ -1012,7 +1020,7 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
       categoryOrTopic: catOrTopic,
       exportMode: excelMode,
     });
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument?.spreadsheetml?.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     return res.end(buffer); // Send Excel file directly
   }
@@ -1032,7 +1040,7 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
       categoryOrTopic: catOrTopic,
       exportMode: excelMode,
     });
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument?.spreadsheetml?.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     return res.end(buffer); // Send Excel file directly
   }
@@ -1054,31 +1062,31 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
       res.setHeader('Content-Disposition', `attachment; filename="${zipFileName}"`);
       res.download(zipFilePath, zipFileName, (err) => {
         if (err) {
-          console.error('Error sending zip file:', err);
+          logger.error('Error sending zip file:', error);
         }
         fs.unlinkSync(zipFilePath);
       });
     });
     archive.on('warning', (err) => {
       if (err.code === 'ENOENT') {
-        console.warn('Archive warning:', err);
+        logger.warn('Archive warning:', err);
       } else {
-        console.error('Archive error:', err);
+        logger.error('Archive error:', error);
         return next(new ErrorResponse('Error creating archive', 500));
       }
     });
     archive.on('error', (err) => {
-      console.error('Archive error:', err);
+      logger.error('Archive error:', error);
       return next(new ErrorResponse('Error creating archive', 500));
     });
     archive.pipe(output);
     for (const abstract of abstracts) {
       if (abstract.fileUrl && abstract.fileName) {
-        const regId = abstract.registrationInfo ? abstract.registrationInfo.registrationId : 'unknown';
-        const authorName = abstract.registrationInfo ? `${abstract.registrationInfo.personalInfo.firstName}_${abstract.registrationInfo.personalInfo.lastName}`.replace(/\s+/g, '_') : 'unknown';
+        const regId = abstract.registrationInfo ? abstract?.registrationInfo?.registrationId : 'unknown';
+        const authorName = abstract.registrationInfo ? `${abstract?.registrationInfo?.personalInfo.firstName}_${abstract?.registrationInfo?.personalInfo.lastName}`.replace(/\s+/g, '_') : 'unknown';
         const oldFilePath = path.join(
   UPLOADS_BASE_DIR,
-  abstract.fileUrl.replace(/^\/uploads[\/]/, '')
+  abstract?.fileUrl?.replace(/^\/uploads[\/]/, '')
 );
         if (fs.existsSync(filePath)) {
           const fileExt = path.extname(abstract.fileName);
@@ -1118,7 +1126,7 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
   output.on('close', () => {
     res.download(zipFilePath, zipFileName, (err) => {
       if (err) {
-        console.error('Error sending zip file:', err);
+        logger.error('Error sending zip file:', error);
       }
       fs.unlinkSync(zipFilePath);
     });
@@ -1126,14 +1134,14 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
 
   archive.on('warning', (err) => {
     if (err.code === 'ENOENT') {
-      console.warn('Archive warning:', err);
+      logger.warn('Archive warning:', err);
     } else {
-      console.error('Archive error:', err);
+      logger.error('Archive error:', error);
       return next(new ErrorResponse('Error creating archive', 500));
     }
   });
   archive.on('error', (err) => {
-    console.error('Archive error:', err);
+    logger.error('Archive error:', error);
     return next(new ErrorResponse('Error creating archive', 500));
   });
   archive.pipe(output);
@@ -1160,7 +1168,7 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
       Authors: ${abstract.authors}
       Affiliations: ${abstract.authorAffiliations || 'N/A'}
       Topic: ${abstract.topic}
-      Category: ${abstract.categoryInfo ? abstract.categoryInfo.name : 'N/A'}
+      Category: ${abstract.categoryInfo ? abstract?.categoryInfo?.name : 'N/A'}
       Status: ${abstract.status}
       Submission Date: ${new Date(abstract.submissionDate).toLocaleString()}
       
@@ -1170,15 +1178,15 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
       Word Count: ${abstract.wordCount}
       
       Review Comments:
-      ${abstract.reviewComments.map(comment => 
+      ${abstract?.reviewComments?.map(comment => 
         `${new Date(comment.timestamp).toLocaleString()}: ${comment.comment}`
       ).join('\n') || 'No comments'}
     `;
 
     // Get registration info to name file
-    const regId = abstract.registrationInfo ? abstract.registrationInfo.registrationId : 'unknown';
+    const regId = abstract.registrationInfo ? abstract?.registrationInfo?.registrationId : 'unknown';
     const authorName = abstract.registrationInfo ? 
-      `${abstract.registrationInfo.personalInfo.firstName}_${abstract.registrationInfo.personalInfo.lastName}`.replace(/\s+/g, '_') : 
+      `${abstract?.registrationInfo?.personalInfo.firstName}_${abstract?.registrationInfo?.personalInfo.lastName}`.replace(/\s+/g, '_') : 
       'unknown';
     
     // Create filename based on registration ID and author name
@@ -1189,7 +1197,7 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
     
     // If there's a file attached to the abstract, add it too
     if (abstract.fileUrl) {
-      const filePath = path.join(UPLOADS_BASE_DIR, abstract.fileUrl.replace(/^\/uploads[\/]/, ''), );
+      const filePath = path.join(UPLOADS_BASE_DIR, abstract?.fileUrl?.replace(/^\/uploads[\/]/, ''), );
       if (fs.existsSync(filePath)) {
         // Add original file to archive with registration ID prefix
         const fileExt = path.extname(abstract.fileName);
@@ -1218,7 +1226,7 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
 exports.getAbstractStatistics = asyncHandler(async (req, res, next) => {
   const { eventId } = req.params;
 
-  if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
+  if (!eventId || !mongoose?.Types?.ObjectId.isValid(eventId)) {
     return next(createApiError(400, 'Invalid or missing Event ID'));
   }
 
@@ -1238,7 +1246,7 @@ exports.getAbstractStatistics = asyncHandler(async (req, res, next) => {
     // If not, this part can be omitted or adapted
     let typeCountsArr = [];
     // Check if submissionType exists in schema before aggregating
-    if (Abstract.schema.paths['submissionType']) {
+    if (Abstract?.schema?.paths['submissionType']) {
         typeCountsArr = await Abstract.aggregate([
             { $match: { event: new mongoose.Types.ObjectId(eventId) } },
             { $group: { _id: '$submissionType', count: { $sum: 1 } } }
@@ -1253,10 +1261,10 @@ exports.getAbstractStatistics = asyncHandler(async (req, res, next) => {
       }},
       { $unwind: '$reviewDetails.reviews' },
       { $group: {
-          _id: '$reviewDetails.reviews.reviewer',
-          completedReviews: { $sum: { $cond: [{ $eq: ['$reviewDetails.reviews.isComplete', true] }, 1, 0] } },
-          // pendingReviews: { $sum: { $cond: [{ $eq: ['$reviewDetails.reviews.isComplete', false] }, 1, 0] } }, // Pending might be less useful here, focus on completed and score
-          averageScore: { $avg: '$reviewDetails.reviews.score' },
+          _id: '$reviewDetails?.reviews?.reviewer',
+          completedReviews: { $sum: { $cond: [{ $eq: ['$reviewDetails?.reviews?.isComplete', true] }, 1, 0] } },
+          // pendingReviews: { $sum: { $cond: [{ $eq: ['$reviewDetails?.reviews?.isComplete', false] }, 1, 0] } }, // Pending might be less useful here, focus on completed and score
+          averageScore: { $avg: '$reviewDetails?.reviews?.score' },
           reviewCount: { $sum: 1 }
       }},
       { $sort: { reviewCount: -1 } } // Sort by number of reviews done
@@ -1270,13 +1278,13 @@ exports.getAbstractStatistics = asyncHandler(async (req, res, next) => {
     }
     
     const populatedReviewerStats = reviewerStatsArr.map(stat => {
-      const reviewer = reviewers.find(r => r._id.equals(stat._id));
+      const reviewer = reviewers.find(r => r?._id?.equals(stat._id));
       return {
         reviewerId: stat._id,
         reviewerName: reviewer ? reviewer.name : 'Unknown Reviewer',
         reviewerEmail: reviewer ? reviewer.email : 'N/A',
         completedReviews: stat.completedReviews || 0,
-        averageScore: stat.averageScore ? parseFloat(stat.averageScore.toFixed(1)) : null,
+        averageScore: stat.averageScore ? parseFloat(stat?.averageScore?.toFixed(1)) : null,
         reviewCount: stat.reviewCount || 0
       };
     });
@@ -1303,17 +1311,17 @@ exports.getAbstractStatistics = asyncHandler(async (req, res, next) => {
     // Resolve category names
     const categoryIds = categoryCountsArr.map(c => c._id);
     let categoriesMap = {};
-    if (categoryIds.length) {
+    if (categoryIds && categoryIds.length) {
       const categories = await Category.find({ _id: { $in: categoryIds } }).select('name');
       categoriesMap = categories.reduce((acc, cat) => {
-        acc[cat._id.toString()] = cat.name;
+        acc[cat?._id?.toString()] = cat.name;
         return acc;
       }, {});
     }
-    // Fallback: use event.abstractSettings.categories for name resolution if not found in Category collection
+    // Fallback: use event?.abstractSettings?.categories for name resolution if not found in Category collection
     if (!Object.keys(categoriesMap).length && event?.abstractSettings?.categories) {
-      event.abstractSettings.categories.forEach(cat => {
-        if (cat._id) categoriesMap[cat._id.toString()] = cat.name;
+      event?.abstractSettings?.categories.forEach(cat => {
+        if (cat._id) categoriesMap[cat?._id?.toString()] = cat.name;
       });
     }
 
@@ -1345,8 +1353,11 @@ exports.getAbstractStatistics = asyncHandler(async (req, res, next) => {
  * @access  Private (Assigned Reviewer or Admin)
  */
 exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
-  const { score, comments, decision } = req.body;
-  const abstractId = req.params.id;
+  const { score, comments, decision  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
+  const abstractId = req?.params?.id;
   const reviewerUser = req.user; // The user submitting the review
 
   if (!decision || !['accept', 'reject', 'revise', 'undecided'].includes(decision)) {
@@ -1360,7 +1371,7 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
     .populate('author', 'name email');
 
   if (!abstract) {
-    return next(createApiError(`Abstract not found with id of ${abstractId}`, 404));
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
   }
 
   const event = abstract.event; // Already populated
@@ -1369,27 +1380,26 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
     return next(createApiError(500, 'Associated event not found for this abstract.'));
   }
 
-  const isAssignedReviewer = abstract.reviewDetails && abstract.reviewDetails.assignedTo &&
-                           abstract.reviewDetails.assignedTo.some(id => id.equals(reviewerUser._id));
+  const isAssignedReviewer = abstract.reviewDetails && abstract?.reviewDetails?.assignedTo &&
+                           abstract?.reviewDetails?.assignedTo.some(id => id.equals(reviewerUser._id));
 
   if (reviewerUser.role !== 'admin' && !isAssignedReviewer) { // Admins can also submit/override reviews
     return next(createApiError(403, 'User not authorized to review this abstract'));
   }
 
+  // Initialize reviewDetails if needed
   if (!abstract.reviewDetails) {
-    abstract.reviewDetails = { reviews: [], assignedTo: [] };
+    abstract.reviewDetails = {};
   }
-  if (!abstract.reviewDetails.reviews) {
-    abstract.reviewDetails.reviews = [];
-  }
+  abstract.reviewDetails.reviews = [];
 
-  const existingReviewIndex = abstract.reviewDetails.reviews.findIndex(
-    review => review.reviewer && review.reviewer.equals(reviewerUser._id)
+  const existingReviewIndex = abstract?.reviewDetails?.reviews.findIndex(
+    review => review.reviewer && review?.reviewer?.equals(reviewerUser._id)
   );
 
   if (existingReviewIndex > -1) {
     // Update existing review
-    const reviewToUpdate = abstract.reviewDetails.reviews[existingReviewIndex];
+    const reviewToUpdate = abstract?.reviewDetails?.reviews[existingReviewIndex];
     reviewToUpdate.score = score !== undefined ? Number(score) : reviewToUpdate.score;
     reviewToUpdate.comments = comments !== undefined ? comments : reviewToUpdate.comments;
     reviewToUpdate.decision = decision;
@@ -1398,7 +1408,7 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
     logger.info(`[submitIndividualReview] Review updated for abstract ${abstractId} by reviewer ${reviewerUser._id}`);
   } else {
     // Add new review
-    abstract.reviewDetails.reviews.push({
+    abstract?.reviewDetails?.reviews.push({
       reviewer: reviewerUser._id,
       score: score !== undefined ? Number(score) : null,
       comments,
@@ -1410,7 +1420,7 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
   }
 
   // Calculate average score
-  const validScores = abstract.reviewDetails.reviews
+  const validScores = abstract?.reviewDetails?.reviews
     .filter(r => r.isComplete && typeof r.score === 'number')
     .map(r => r.score);
   if (validScores.length > 0) {
@@ -1451,7 +1461,7 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
   try {
     await abstract.save();
     logger.info(`[submitIndividualReview] Abstract ${abstract._id} saved successfully. Current status: ${abstract.status}`);
-  } catch (saveError) {
+  } catch (error) {
     logger.error(`[submitIndividualReview] Error saving abstract ${abstractId}:`, saveError);
     return next(createApiError('Failed to save review and update abstract status.', 500, saveError.stack));
   }
@@ -1464,18 +1474,21 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
     // Resolve author/registrant contact for email
     let authorEmail = '';
     let authorName = 'Author';
-    if (abstract.registration && abstract.registration.personalInfo && abstract.registration.personalInfo.email) {
-      authorEmail = abstract.registration.personalInfo.email;
-      authorName = abstract.registration.personalInfo.firstName || 'Participant';
-    } else if (abstract.author) {
-      const authorUser = await AuthorUser.findById(abstract.author).lean();
-      if (authorUser) {
-        authorEmail = authorUser.email;
-        authorName = (authorUser.name || 'Author').split(' ')[0];
-      }
+    if (abstract.registration && abstract?.registration?.personalInfo.email) {
+      authorEmail = abstract?.registration?.personalInfo.email;
+      authorName = abstract?.registration?.personalInfo.firstName || 'Participant';
+          } else if (abstract.author) {
+        const authorUser = await AuthorUser.findById(abstract.author).lean();
+        if (!authorUser) {
+          return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+        }
+        if (authorUser) {
+          authorEmail = authorUser.email;
+          authorName = (authorUser.name || 'Author').split(' ')[0];
+        }
     }
 
-    if (authorEmail && event.emailSettings && event.emailSettings.enabled) {
+    if (authorEmail && event.emailSettings && event?.emailSettings?.enabled) {
       const emailSubject = `Abstract Approved - ${event.name}`;
       const emailBody = `<p>Dear ${authorName},</p>
         <p>Your abstract titled "<strong>${abstract.title}</strong>" for the event "<strong>${event.name}</strong>" has been <strong>approved</strong> by a reviewer.</p>
@@ -1489,28 +1502,28 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
           to: authorEmail,
           subject: emailSubject,
           html: emailBody,
-          fromName: event.emailSettings.senderName,
-          fromEmail: event.emailSettings.senderEmail,
+          fromName: event?.emailSettings?.senderName,
+          fromEmail: event?.emailSettings?.senderEmail,
           smtp: {
-            host: event.emailSettings.smtpHost,
-            port: event.emailSettings.smtpPort,
-            secure: event.emailSettings.smtpSecure,
+            host: event?.emailSettings?.smtpHost,
+            port: event?.emailSettings?.smtpPort,
+            secure: event?.emailSettings?.smtpSecure,
             auth: {
-              user: event.emailSettings.smtpUser,
-              pass: event.emailSettings.smtpPassword
+              user: event?.emailSettings?.smtpUser,
+              pass: event?.emailSettings?.smtpPassword
             }
           }
         });
         logger.info(`[submitIndividualReview] Approval email sent to registrant ${authorEmail} for abstract ${abstractId}`);
-      } catch (emailError) {
+      } catch (error) {
         logger.error(`[submitIndividualReview] Failed to send approval email to registrant ${authorEmail} for abstract ${abstractId}:`, emailError);
       }
     }
 
-    if (event.emailSettings && event.emailSettings.enabled && event.emailSettings.automaticEmails && event.emailSettings.automaticEmails.reviewSubmittedNotificationToAdmin) {
+    if (event.emailSettings && event?.emailSettings?.enabled && event?.emailSettings?.automaticEmails.reviewSubmittedNotificationToAdmin) {
       const adminsToNotify = await User.find({ role: { $in: ['admin', 'staff'] }, email: { $ne: null } });
       if (adminsToNotify.length > 0) {
-        logger.info(`[submitIndividualReview] Notifying ${adminsToNotify.length} admin/staff of approval for abstract ${abstractId}.`);
+        logger.info(`[submitIndividualReview] Notifying ${adminsToNotify && adminsToNotify.length} admin/staff of approval for abstract ${abstractId}.`);
         const adminSubject = `Abstract Approved by Reviewer - ${event.name}`;
         for (const admin of adminsToNotify) {
           const adminBody = `<p>Dear ${admin.name || 'Admin/Staff'},</p>
@@ -1525,20 +1538,20 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
               to: admin.email,
               subject: adminSubject,
               html: adminBody,
-              fromName: event.emailSettings.senderName,
-              fromEmail: event.emailSettings.senderEmail,
+              fromName: event?.emailSettings?.senderName,
+              fromEmail: event?.emailSettings?.senderEmail,
               smtp: {
-                host: event.emailSettings.smtpHost,
-                port: event.emailSettings.smtpPort,
-                secure: event.emailSettings.smtpSecure,
+                host: event?.emailSettings?.smtpHost,
+                port: event?.emailSettings?.smtpPort,
+                secure: event?.emailSettings?.smtpSecure,
                 auth: {
-                  user: event.emailSettings.smtpUser,
-                  pass: event.emailSettings.smtpPassword
+                  user: event?.emailSettings?.smtpUser,
+                  pass: event?.emailSettings?.smtpPassword
                 }
               }
             });
             logger.info(`[submitIndividualReview] Approval notification sent to admin ${admin.email} for abstract ${abstract._id}`);
-          } catch (emailError) {
+          } catch (error) {
             logger.error(`[submitIndividualReview] Failed to send approval notification to admin ${admin.email} for abstract ${abstract._id}:`, emailError);
           }
         }
@@ -1548,12 +1561,16 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
 
   // Populate for response
   const populatedAbstract = await Abstract.findById(abstract._id)
-    .populate('event', 'name emailSettings') // Already populated but good to be explicit for response
-    .populate('registration', 'personalInfo email') // Already populated
+    .populate('event', 'name emailSettings')
+    .populate('registration', 'personalInfo email')
     .populate('category', 'name')
     .populate('reviewDetails.assignedTo', 'name email')
     .populate('reviewDetails.reviews.reviewer', 'name email')
     .populate('author', 'name email');
+
+  if (!populatedAbstract) {
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+  }
 
   return sendSuccess(res, 200, 'Review submitted successfully', populatedAbstract);
 });
@@ -1564,9 +1581,12 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
  * @access  Private (Admin/Staff)
  */
 exports.assignAbstractReviewer = asyncHandler(async (req, res, next) => {
-  const { reviewerIds } = req.body;
-  const abstractId = req.params.id;
-  const eventIdFromParams = req.params.eventId;
+  const { reviewerIds  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
+  const abstractId = req?.params?.id;
+  const eventIdFromParams = req?.params?.eventId;
 
   if (!reviewerIds || !Array.isArray(reviewerIds) || reviewerIds.length === 0) {
     return next(createApiError(400, 'Please provide a valid array of reviewer IDs'));
@@ -1582,14 +1602,14 @@ exports.assignAbstractReviewer = asyncHandler(async (req, res, next) => {
 
   try {
     const abstract = await Abstract.findById(abstractId).session(session);
-  if (!abstract) {
+    if (!abstract) {
       await session.abortTransaction();
       session.endSession();
       return next(createApiError(`Abstract not found with id of ${abstractId}`, 404));
     }
 
-    const eventIdForLookup = eventIdFromParams || abstract.event.toString();
-    const event = await Event.findById(eventIdForLookup).session(session); // Ensure event is fetched within session if needed for checks
+    const eventIdForLookup = eventIdFromParams || abstract?.event?.toString();
+    const event = await Event.findById(eventIdForLookup).session(session);
     if (!event) {
       await session.abortTransaction();
       session.endSession();
@@ -1597,12 +1617,12 @@ exports.assignAbstractReviewer = asyncHandler(async (req, res, next) => {
       return next(createApiError(`Event configuration error for abstract ${abstractId}`, 500));
     }
 
-  if (!abstract.reviewDetails) {
-    abstract.reviewDetails = { assignedTo: [], reviews: [] };
-  }
-  if (!abstract.reviewDetails.assignedTo) {
-    abstract.reviewDetails.assignedTo = [];
-  }
+    if (!abstract.reviewDetails) {
+      abstract.reviewDetails = { assignedTo: [], reviews: [] };
+    }
+    if (!abstract.reviewDetails.assignedTo) {
+      abstract.reviewDetails.assignedTo = [];
+    }
 
     const newAssignments = [];
     const alreadyAssigned = [];
@@ -1610,8 +1630,8 @@ exports.assignAbstractReviewer = asyncHandler(async (req, res, next) => {
     const successfullyAssignedReviewersData = []; // For email notifications
 
     for (const reviewerId of reviewerIds) {
-      const isAlreadyAssigned = abstract.reviewDetails.assignedTo.some(assignedId => assignedId.equals(reviewerId));
-  if (isAlreadyAssigned) {
+      const isAlreadyAssigned = abstract?.reviewDetails?.assignedTo.some(assignedId => assignedId.equals(reviewerId));
+      if (isAlreadyAssigned) {
         alreadyAssigned.push(reviewerId);
         continue;
       }
@@ -1620,7 +1640,7 @@ exports.assignAbstractReviewer = asyncHandler(async (req, res, next) => {
         invalidReviewers.push({ id: reviewerId, reason: reviewerUser ? 'User email not found' : 'User not found' });
         continue;
       }
-      abstract.reviewDetails.assignedTo.push(reviewerUser._id); // Use reviewerUser._id for consistency
+      abstract.reviewDetails.assignedTo.push(reviewerUser._id);
       
       // Hypothetical: Increment assignedAbstractsCount on User model
       reviewerUser.assignedAbstractsCount = (reviewerUser.assignedAbstractsCount || 0) + 1;
@@ -1671,8 +1691,8 @@ exports.assignAbstractReviewer = asyncHandler(async (req, res, next) => {
             }
           });
           logger.info(`Reviewer assignment email sent to ${reviewer.email} for abstract ${abstract._id}`);
-        } catch (emailError) {
-          logger.error(`Failed to send reviewer assignment email to ${reviewer.email} for abstract ${abstract._id} (post-transaction):`, emailError);
+        } catch (error) {
+          logger.error(`Failed to send reviewer assignment email to ${reviewer.email} for abstract ${abstract._id} (post-transaction):`, error);
           // Log error, but don't fail the whole operation as transaction is already committed
         }
       }
@@ -1680,10 +1700,14 @@ exports.assignAbstractReviewer = asyncHandler(async (req, res, next) => {
       logger.warn(`[assignAbstractReviewer] Master email sending is disabled for event ${event._id}. No assignment emails sent for abstract ${abstractId} (post-transaction).`);
     }
 
-  const populatedAbstract = await Abstract.findById(abstract._id)
-    .populate('reviewDetails.assignedTo', 'name email')
+    const populatedAbstract = await Abstract.findById(abstract._id)
+      .populate('reviewDetails.assignedTo', 'name email')
       .populate('reviewDetails.reviews.reviewer', 'name email')
       .populate('author', 'name email');
+    
+    if (!populatedAbstract) {
+      return next(createApiError(`Abstract not found with id of ${abstractId}`, 404));
+    }
 
     let message = 'Reviewer assignment processed.';
     if (newAssignments.length > 0) message += ` ${newAssignments.length} new reviewer(s) assigned.`;
@@ -1719,15 +1743,15 @@ exports.assignAbstractReviewer = asyncHandler(async (req, res, next) => {
  * @access  Protected (same as getAbstract)
  */
 const downloadAbstractAttachment = asyncHandler(async (req, res, next) => {
-  const abstractId = req.params.id; // This is abstractId from the route
-  // eventId is available via req.params.eventId due to mergeParams in router
+  const abstractId = req?.params?.id; // This is abstractId from the route
+  // eventId is available via req?.params?.eventId due to mergeParams in router
 
   const abstract = await Abstract.findById(abstractId)
-    .populate('registration', 'registrationId personalInfo') // Ensure registrationId and any name fields are populated
-    .populate('event', 'name'); // For event context if needed
+    .populate('registration', 'registrationId personalInfo')
+    .populate('event', 'name');
 
   if (!abstract) {
-    return next(createApiError(`Abstract not found with id of ${abstractId}`, 404));
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
   }
 
   if (!abstract.fileUrl || !abstract.fileName) {
@@ -1736,7 +1760,7 @@ const downloadAbstractAttachment = asyncHandler(async (req, res, next) => {
 
   // Construct the physical path to the file
   // Always resolve to server/public/uploads/abstracts/... regardless of leading slash
-  const relativePath = abstract.fileUrl.replace(/^\/uploads[\/]/, '');
+  const relativePath = abstract?.fileUrl?.replace(/^\/uploads[\/]/, '');
   const physicalFilePath = path.join(UPLOADS_BASE_DIR, relativePath);
   if (!fs.existsSync(physicalFilePath)) {
     logger.error(`File not found at physical path: ${physicalFilePath} for abstract ${abstractId}`);
@@ -1749,7 +1773,7 @@ const downloadAbstractAttachment = asyncHandler(async (req, res, next) => {
   
   const regId = abstract.registration?.registrationId || 'UnknownRegID';
   // Assuming authors string is suitable or pick first author if it's an array/object
-  const authorName = abstract.authors ? sanitize(abstract.authors.split(',')[0].trim()) : 'UnknownAuthor';
+  const authorName = abstract.authors ? sanitize(abstract?.authors?.split(',')[0].trim()) : 'UnknownAuthor';
   const originalFileName = abstract.fileName;
   const ext = path.extname(originalFileName);
   const baseName = path.basename(originalFileName, ext);
@@ -1763,7 +1787,7 @@ const downloadAbstractAttachment = asyncHandler(async (req, res, next) => {
 
   res.download(physicalFilePath, newFileName, (err) => {
     if (err) {
-      logger.error(`Error downloading file ${physicalFilePath} as ${newFileName}:`, err);
+      logger.error(`Error downloading file ${physicalFilePath} as ${newFileName}:`, error);
       // Avoid sending another response if headers already sent by res.download on error
       if (!res.headersSent) {
         // If it's a common error like file not found (though checked above), send 404
@@ -1780,13 +1804,13 @@ const downloadAbstractAttachment = asyncHandler(async (req, res, next) => {
  * @access  Private (Admin)
  */
 exports.approveAbstract = asyncHandler(async (req, res, next) => {
-  const abstractId = req.params.id;
+  const abstractId = req?.params?.id;
   const abstract = await Abstract.findById(abstractId)
     .populate('registration', 'personalInfo email')
-    .populate('event'); // No longer populating specific non-existent templates
+    .populate('event');
 
   if (!abstract) {
-    return next(createApiError(`Abstract not found with id of ${abstractId}`, 404));
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
   }
 
   abstract.status = 'approved';
@@ -1795,26 +1819,29 @@ exports.approveAbstract = asyncHandler(async (req, res, next) => {
     abstract.reviewDetails.finalDecision = 'approved';
     abstract.reviewDetails.decisionBy = req.user._id;
     abstract.reviewDetails.decisionDate = Date.now();
-    abstract.reviewDetails.decisionReason = req.body.reason || 'Approved by admin.';
+    abstract.reviewDetails.decisionReason = req?.body?.reason || 'Approved by admin.';
   }
   await abstract.save();
-  logger.info(`[approveAbstract] Abstract ${abstractId} approved by ${req.user ? req.user._id : 'N/A'}`);
+  logger.info(`[approveAbstract] Abstract ${abstractId} approved by ${req.user ? req?.user?._id : 'N/A'}`);
 
   const event = abstract.event;
   let author = abstract.registration;
   if (!author && abstract.author) {
     const authorUser = await AuthorUser.findById(abstract.author).lean();
+    if (!authorUser) {
+      return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+    }
     if (authorUser) {
       author = { personalInfo: { firstName: authorUser.name?.split(' ')[0] || 'Author', email: authorUser.email } };
     }
   }
 
-  if (author && author.personalInfo && author.personalInfo.email && 
-      event && event.emailSettings && event.emailSettings.enabled) {
-    logger.info(`[approveAbstract] Master email sending enabled. Attempting to send approval email for abstract ${abstract._id} to ${author.personalInfo.email}.`);
+  if (author && author.personalInfo && author?.personalInfo?.email && 
+      event && event.emailSettings && event?.emailSettings?.enabled) {
+    logger.info(`[approveAbstract] Master email sending enabled. Attempting to send approval email for abstract ${abstract._id} to ${author?.personalInfo?.email}.`);
     const tmpl = event.emailSettings?.templates?.abstractApproved;
     const placeholderData = {
-      firstName: author.personalInfo.firstName || 'Author',
+      firstName: author?.personalInfo?.firstName || 'Author',
       eventName: event.name,
       abstractTitle: abstract.title,
       abstractNumber: abstract.abstractNumber || '',
@@ -1831,30 +1858,30 @@ exports.approveAbstract = asyncHandler(async (req, res, next) => {
                      <p>Congratulations! Your abstract titled "<strong>${abstract.title}</strong>" for the event "<strong>${event.name}</strong>" has been approved.</p>
                      <p>Further details regarding your presentation or publication (if applicable) will be communicated soon.</p>
                      <p>Regards,<br/>The Event Team</p>`;
-      logger.info(`[approveAbstract] Using generic approval content for ${author.personalInfo.email} for abstract ${abstract._id}`);
+      logger.info(`[approveAbstract] Using generic approval content for ${author?.personalInfo?.email} for abstract ${abstract._id}`);
     }
     try {
       await sendEmail({
-        to: author.personalInfo.email,
+        to: author?.personalInfo?.email,
         subject: emailSubject,
         html: emailBody,
-        fromName: event.emailSettings.senderName,
-        fromEmail: event.emailSettings.senderEmail,
+        fromName: event?.emailSettings?.senderName,
+        fromEmail: event?.emailSettings?.senderEmail,
         smtp: {
-          host: event.emailSettings.smtpHost,
-          port: event.emailSettings.smtpPort,
-          secure: event.emailSettings.smtpSecure,
+          host: event?.emailSettings?.smtpHost,
+          port: event?.emailSettings?.smtpPort,
+          secure: event?.emailSettings?.smtpSecure,
           auth: {
-            user: event.emailSettings.smtpUser,
-            pass: event.emailSettings.smtpPassword
+            user: event?.emailSettings?.smtpUser,
+            pass: event?.emailSettings?.smtpPassword
           }
         }
       });
-      logger.info(`Abstract approval email sent to ${author.personalInfo.email} for abstract ${abstract._id}`);
-    } catch (emailError) {
-      logger.error(`Failed to send abstract approval email for abstract ${abstract._id} to ${author.personalInfo.email}:`, emailError);
+      logger.info(`Abstract approval email sent to ${author?.personalInfo?.email} for abstract ${abstract._id}`);
+    } catch (error) {
+      logger.error(`Failed to send abstract approval email for abstract ${abstract._id} to ${author?.personalInfo?.email}:`, emailError);
     }
-  } else if (author && author.personalInfo && author.personalInfo.email) {
+  } else if (author && author.personalInfo && author?.personalInfo?.email) {
       logger.warn(`[approveAbstract] Master email sending is disabled for event ${event._id}. No approval email sent for abstract ${abstractId}.`);
   }
 
@@ -1867,15 +1894,18 @@ exports.approveAbstract = asyncHandler(async (req, res, next) => {
  * @access  Private (Admin)
  */
 exports.rejectAbstract = asyncHandler(async (req, res, next) => {
-  const abstractId = req.params.id;
-  const { reason } = req.body;
+  const abstractId = req?.params?.id;
+  const { reason  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
 
   const abstract = await Abstract.findById(abstractId)
     .populate('registration', 'personalInfo email')
-    .populate('event'); // No longer populating specific non-existent templates
+    .populate('event');
 
   if (!abstract) {
-    return next(createApiError(`Abstract not found with id of ${abstractId}`, 404));
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
   }
 
   abstract.status = 'rejected';
@@ -1887,23 +1917,26 @@ exports.rejectAbstract = asyncHandler(async (req, res, next) => {
     abstract.reviewDetails.decisionReason = reason || 'Rejected by admin.';
   }
   await abstract.save();
-  logger.info(`[rejectAbstract] Abstract ${abstractId} rejected by ${req.user ? req.user._id : 'N/A'}. Reason: ${reason}`);
+  logger.info(`[rejectAbstract] Abstract ${abstractId} rejected by ${req.user ? req?.user?._id : 'N/A'}. Reason: ${reason}`);
 
   const event = abstract.event;
   let author = abstract.registration;
   if (!author && abstract.author) {
-     const authorUser = await AuthorUser.findById(abstract.author).lean();
-     if (authorUser) {
-       author = { personalInfo: { firstName: authorUser.name?.split(' ')[0] || 'Author', email: authorUser.email } };
-     }
+    const authorUser = await AuthorUser.findById(abstract.author).lean();
+    if (!authorUser) {
+      return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+    }
+    if (authorUser) {
+      author = { personalInfo: { firstName: authorUser.name?.split(' ')[0] || 'Author', email: authorUser.email } };
+    }
   }
 
-  if (author && author.personalInfo && author.personalInfo.email && 
-      event && event.emailSettings && event.emailSettings.enabled) {
-    logger.info(`[rejectAbstract] Master email sending enabled. Attempting to send rejection email for abstract ${abstract._id} to ${author.personalInfo.email}.`);
+  if (author && author.personalInfo && author?.personalInfo?.email && 
+      event && event.emailSettings && event?.emailSettings?.enabled) {
+    logger.info(`[rejectAbstract] Master email sending enabled. Attempting to send rejection email for abstract ${abstract._id} to ${author?.personalInfo?.email}.`);
     const tmplRej = event.emailSettings?.templates?.abstractRejected;
     const placeholderData = {
-      firstName: author.personalInfo.firstName || 'Author',
+      firstName: author?.personalInfo?.firstName || 'Author',
       eventName: event.name,
       abstractTitle: abstract.title,
       abstractNumber: abstract.abstractNumber || '',
@@ -1921,30 +1954,30 @@ exports.rejectAbstract = asyncHandler(async (req, res, next) => {
                      ${reason ? `<p>Reason: ${reason}</p>` : ''}
                      <p>We thank you for your submission and encourage you to participate in future events.</p>
                      <p>Regards,<br/>The Event Team</p>`;
-      logger.info(`[rejectAbstract] Using generic rejection content for ${author.personalInfo.email} for abstract ${abstract._id}`);
+      logger.info(`[rejectAbstract] Using generic rejection content for ${author?.personalInfo?.email} for abstract ${abstract._id}`);
     }
     try {
       await sendEmail({
-        to: author.personalInfo.email,
+        to: author?.personalInfo?.email,
         subject: emailSubject,
         html: emailBody,
-        fromName: event.emailSettings.senderName,
-        fromEmail: event.emailSettings.senderEmail,
+        fromName: event?.emailSettings?.senderName,
+        fromEmail: event?.emailSettings?.senderEmail,
         smtp: {
-          host: event.emailSettings.smtpHost,
-          port: event.emailSettings.smtpPort,
-          secure: event.emailSettings.smtpSecure,
+          host: event?.emailSettings?.smtpHost,
+          port: event?.emailSettings?.smtpPort,
+          secure: event?.emailSettings?.smtpSecure,
           auth: {
-            user: event.emailSettings.smtpUser,
-            pass: event.emailSettings.smtpPassword
+            user: event?.emailSettings?.smtpUser,
+            pass: event?.emailSettings?.smtpPassword
           }
         }
       });
-      logger.info(`Abstract rejection email sent to ${author.personalInfo.email} for abstract ${abstract._id}`);
-    } catch (emailError) {
-      logger.error(`Failed to send abstract rejection email for abstract ${abstract._id} to ${author.personalInfo.email}:`, emailError);
+      logger.info(`Abstract rejection email sent to ${author?.personalInfo?.email} for abstract ${abstract._id}`);
+    } catch (error) {
+      logger.error(`Failed to send abstract rejection email for abstract ${abstract._id} to ${author?.personalInfo?.email}:`, emailError);
     }
-  } else if (author && author.personalInfo && author.personalInfo.email) {
+  } else if (author && author.personalInfo && author?.personalInfo?.email) {
     logger.warn(`[rejectAbstract] Master email sending is disabled for event ${event._id}. No rejection email sent for abstract ${abstractId}.`);
   }
   return sendSuccess(res, 200, 'Abstract rejected successfully', abstract);
@@ -1956,15 +1989,18 @@ exports.rejectAbstract = asyncHandler(async (req, res, next) => {
  * @access  Private (Admin)
  */
 exports.requestRevision = asyncHandler(async (req, res, next) => {
-  const abstractId = req.params.id;
-  const { reason, revisionDeadline } = req.body;
+  const abstractId = req?.params?.id;
+  const { reason, revisionDeadline  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
 
   const abstract = await Abstract.findById(abstractId)
     .populate('registration', 'personalInfo email')
-    .populate('event'); // No longer populating specific non-existent templates
+    .populate('event');
 
   if (!abstract) {
-    return next(createApiError(`Abstract not found with id of ${abstractId}`, 404));
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
   }
 
   abstract.status = 'revision-requested';
@@ -1979,28 +2015,31 @@ exports.requestRevision = asyncHandler(async (req, res, next) => {
     }
   }
   await abstract.save();
-  logger.info(`[requestRevision] Revision requested for abstract ${abstractId} by ${req.user ? req.user._id : 'N/A'}. Reason: ${reason}`);
+  logger.info(`[requestRevision] Revision requested for abstract ${abstractId} by ${req.user ? req?.user?._id : 'N/A'}. Reason: ${reason}`);
 
   const event = abstract.event;
   let author = abstract.registration;
   if (!author && abstract.author) {
     const authorUser = await AuthorUser.findById(abstract.author).lean();
-    if(authorUser){
+    if (!authorUser) {
+      return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+    }
+    if (authorUser) {
       author = { personalInfo: { firstName: authorUser.name?.split(' ')[0] || 'Author', email: authorUser.email } };
     }
   }
 
-  if (author && author.personalInfo && author.personalInfo.email && 
-      event && event.emailSettings && event.emailSettings.enabled) {
-    logger.info(`[requestRevision] Master email sending enabled. Attempting to send revision request email for abstract ${abstract._id} to ${author.personalInfo.email}.`);
+  if (author && author.personalInfo && author?.personalInfo?.email && 
+      event && event.emailSettings && event?.emailSettings?.enabled) {
+    logger.info(`[requestRevision] Master email sending enabled. Attempting to send revision request email for abstract ${abstract._id} to ${author?.personalInfo?.email}.`);
     const tmplRev = event.emailSettings?.templates?.abstractRevisionRequested;
     const placeholderData = {
-      firstName: author.personalInfo.firstName || 'Author',
+      firstName: author?.personalInfo?.firstName || 'Author',
       eventName: event.name,
       abstractTitle: abstract.title,
       abstractNumber: abstract.abstractNumber || '',
       reason: reason || '',
-      revisionDeadline: abstract.reviewDetails.revisionDeadline ? new Date(abstract.reviewDetails.revisionDeadline).toLocaleDateString() : ''
+      revisionDeadline: abstract?.reviewDetails?.revisionDeadline ? new Date(abstract?.reviewDetails?.revisionDeadline).toLocaleDateString() : ''
     };
     let emailSubject,emailBody;
     if(tmplRev && tmplRev.subject && tmplRev.body){
@@ -2013,33 +2052,33 @@ exports.requestRevision = asyncHandler(async (req, res, next) => {
                      <p>Regarding your abstract titled "<strong>${abstract.title}</strong>" for the event "<strong>${event.name}</strong>", a revision has been requested.</p>
                      <p><strong>Comments/Reason for Revision:</strong></p>
                      <p>${reason || 'Please review the abstract guidelines and resubmit.'}</p>
-                     ${abstract.reviewDetails.revisionDeadline ? `<p>Please submit your revised abstract by: <strong>${placeholderData.revisionDeadline}</strong>.</p>` : ''}
+                     ${abstract?.reviewDetails?.revisionDeadline ? `<p>Please submit your revised abstract by: <strong>${placeholderData.revisionDeadline}</strong>.</p>` : ''}
                      <p>Please log in to the portal to update and resubmit your abstract.</p>
                      <p>Regards,<br/>The Event Team</p>`;
-      logger.info(`[requestRevision] Using generic revision request content for ${author.personalInfo.email} for abstract ${abstract._id}`);
+      logger.info(`[requestRevision] Using generic revision request content for ${author?.personalInfo?.email} for abstract ${abstract._id}`);
     }
     try {
       await sendEmail({
-        to: author.personalInfo.email,
+        to: author?.personalInfo?.email,
         subject: emailSubject,
         html: emailBody,
-        fromName: event.emailSettings.senderName,
-        fromEmail: event.emailSettings.senderEmail,
+        fromName: event?.emailSettings?.senderName,
+        fromEmail: event?.emailSettings?.senderEmail,
         smtp: {
-          host: event.emailSettings.smtpHost,
-          port: event.emailSettings.smtpPort,
-          secure: event.emailSettings.smtpSecure,
+          host: event?.emailSettings?.smtpHost,
+          port: event?.emailSettings?.smtpPort,
+          secure: event?.emailSettings?.smtpSecure,
           auth: {
-            user: event.emailSettings.smtpUser,
-            pass: event.emailSettings.smtpPassword
+            user: event?.emailSettings?.smtpUser,
+            pass: event?.emailSettings?.smtpPassword
           }
         }
       });
-      logger.info(`Abstract revision request email sent to ${author.personalInfo.email} for abstract ${abstract._id}`);
-    } catch (emailError) {
-      logger.error(`Failed to send abstract revision request email for abstract ${abstract._id} to ${author.personalInfo.email}:`, emailError);
+      logger.info(`Abstract revision request email sent to ${author?.personalInfo?.email} for abstract ${abstract._id}`);
+    } catch (error) {
+      logger.error(`Failed to send abstract revision request email for abstract ${abstract._id} to ${author?.personalInfo?.email}:`, emailError);
     }
-  } else if (author && author.personalInfo && author.personalInfo.email) {
+  } else if (author && author.personalInfo && author?.personalInfo?.email) {
     logger.warn(`[requestRevision] Master email sending is disabled for event ${event._id}. No revision request email sent for abstract ${abstractId}.`);
   }
   return sendSuccess(res, 200, 'Abstract revision requested successfully', abstract);
@@ -2051,7 +2090,7 @@ exports.requestRevision = asyncHandler(async (req, res, next) => {
  * @access  Protected (Registrant Owner of the abstract)
  */
 exports.resubmitRevisedAbstract = asyncHandler(async (req, res, next) => {
-  const abstractId = req.params.id;
+  const abstractId = req?.params?.id;
   const registrant = req.registrant; // Assuming protectRegistrant middleware provides this
 
   const abstract = await Abstract.findById(abstractId)
@@ -2059,11 +2098,15 @@ exports.resubmitRevisedAbstract = asyncHandler(async (req, res, next) => {
     .populate('reviewDetails.assignedTo', 'name email'); // Populate assigned reviewers for notification
 
   if (!abstract) {
+    return StandardErrorHandler.sendError(res, 404, 'Resource not found');
+  }
+
+  if (!abstract) {
     return next(createApiError(`Abstract not found with id of ${abstractId}`, 404));
   }
 
   // Authorization: Ensure the abstract belongs to the logged-in registrant and is in 'revision-requested' status
-  if (!abstract.registration.equals(registrant._id)) {
+  if (!abstract?.registration?.equals(registrant._id)) {
     logger.warn(`[resubmitRevisedAbstract] Unauthorized attempt by registrant ${registrant._id} to resubmit abstract ${abstractId} not owned by them.`);
     return next(createApiError(403, 'Not authorized to modify this abstract'));
   }
@@ -2073,8 +2116,8 @@ exports.resubmitRevisedAbstract = asyncHandler(async (req, res, next) => {
     return next(createApiError(`Abstract cannot be resubmitted unless revision was requested. Current status: ${abstract.status}`, 400));
   }
 
-  // Potentially check if revision deadline has passed (if abstract.reviewDetails.revisionDeadline exists)
-  if (abstract.reviewDetails && abstract.reviewDetails.revisionDeadline && new Date() > new Date(abstract.reviewDetails.revisionDeadline)) {
+  // Potentially check if revision deadline has passed (if abstract?.reviewDetails?.revisionDeadline exists)
+  if (abstract.reviewDetails && abstract?.reviewDetails?.revisionDeadline && new Date() > new Date(abstract?.reviewDetails?.revisionDeadline)) {
       logger.warn(`[resubmitRevisedAbstract] Attempt to resubmit abstract ${abstractId} after revision deadline.`);
       return next(createApiError(400, 'The deadline for submitting revisions has passed.'));
   }
@@ -2083,10 +2126,10 @@ exports.resubmitRevisedAbstract = asyncHandler(async (req, res, next) => {
   abstract.status = 'revised-pending-review';
   abstract.lastUpdated = Date.now(); // Update lastUpdated timestamp
   // Optionally, clear previous finalDecision if it was 'revision-requested' to signify a new review cycle for that part.
-  // abstract.reviewDetails.finalDecision = 'pending'; // Or some other appropriate reset
-  // abstract.reviewDetails.decisionReason = null;
-  // abstract.reviewDetails.decisionDate = null;
-  // abstract.reviewDetails.decisionBy = null;
+  // abstract?.reviewDetails?.finalDecision = 'pending'; // Or some other appropriate reset
+  // abstract?.reviewDetails?.decisionReason = null;
+  // abstract?.reviewDetails?.decisionDate = null;
+  // abstract?.reviewDetails?.decisionBy = null;
 
   await abstract.save();
   logger.info(`[resubmitRevisedAbstract] Abstract ${abstractId} resubmitted by registrant ${registrant._id}. Status changed to 'revised-pending-review'.`);
@@ -2095,8 +2138,8 @@ exports.resubmitRevisedAbstract = asyncHandler(async (req, res, next) => {
   const assignedReviewers = abstract.reviewDetails?.assignedTo || [];
 
   // Send notification email to assigned reviewers
-  if (assignedReviewers.length > 0 && event && event.emailSettings && event.emailSettings.enabled) {
-    logger.info(`[resubmitRevisedAbstract] Master email sending enabled. Attempting to send notifications for revised abstract ${abstractId} to ${assignedReviewers.length} reviewers.`);
+  if (assignedReviewers.length > 0 && event && event.emailSettings && event?.emailSettings?.enabled) {
+    logger.info(`[resubmitRevisedAbstract] Master email sending enabled. Attempting to send notifications for revised abstract ${abstractId} to ${assignedReviewers && assignedReviewers.length} reviewers.`);
     const emailSubject = `Revised Abstract Submitted for Re-review - ${event.name}`;
     
     for (const reviewer of assignedReviewers) {
@@ -2111,20 +2154,20 @@ exports.resubmitRevisedAbstract = asyncHandler(async (req, res, next) => {
             to: reviewer.email,
             subject: emailSubject,
             html: emailBody,
-            fromName: event.emailSettings.senderName,
-            fromEmail: event.emailSettings.senderEmail,
+            fromName: event?.emailSettings?.senderName,
+            fromEmail: event?.emailSettings?.senderEmail,
             smtp: {
-              host: event.emailSettings.smtpHost,
-              port: event.emailSettings.smtpPort,
-              secure: event.emailSettings.smtpSecure,
+              host: event?.emailSettings?.smtpHost,
+              port: event?.emailSettings?.smtpPort,
+              secure: event?.emailSettings?.smtpSecure,
               auth: {
-                user: event.emailSettings.smtpUser,
-                pass: event.emailSettings.smtpPassword
+                user: event?.emailSettings?.smtpUser,
+                pass: event?.emailSettings?.smtpPassword
               }
             }
           });
           logger.info(`Revised abstract notification sent to reviewer ${reviewer.email} for abstract ${abstract._id}`);
-        } catch (emailError) {
+        } catch (error) {
           logger.error(`Failed to send revised abstract notification to reviewer ${reviewer.email} for abstract ${abstract._id}:`, emailError);
         }
       }
@@ -2144,7 +2187,7 @@ exports.resubmitRevisedAbstract = asyncHandler(async (req, res, next) => {
 const getAbstractsWithReviewProgress = asyncHandler(async (req, res, next) => {
   const { eventId } = req.params;
 
-  if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
+  if (!eventId || !mongoose?.Types?.ObjectId.isValid(eventId)) {
     return next(createApiError(400, 'Valid Event ID is required'));
   }
 
@@ -2164,7 +2207,7 @@ const getAbstractsWithReviewProgress = asyncHandler(async (req, res, next) => {
       select: 'name email' 
     })
     .populate({ 
-      path: 'reviewDetails.reviews.reviewer',
+      path: 'reviewDetails?.reviews?.reviewer',
       select: 'name email' 
     })
     .sort({ lastUpdated: -1 });
@@ -2181,9 +2224,9 @@ const getAbstractsWithReviewProgress = asyncHandler(async (req, res, next) => {
     let completedReviews = 0;
     
     if (abstractObj.reviewDetails) {
-      totalAssigned = abstractObj.reviewDetails.assignedTo ? abstractObj.reviewDetails.assignedTo.length : 0;
-      completedReviews = abstractObj.reviewDetails.reviews ? 
-        abstractObj.reviewDetails.reviews.filter(review => review.isComplete).length : 0;
+      totalAssigned = abstractObj?.reviewDetails?.assignedTo ? abstractObj?.reviewDetails?.assignedTo && assignedTo.length : 0;
+      completedReviews = abstractObj?.reviewDetails?.reviews ? 
+        abstractObj?.reviewDetails?.reviews.filter(review => review.isComplete).length : 0;
     }
     
     abstractObj.reviewStats = {
@@ -2196,7 +2239,7 @@ const getAbstractsWithReviewProgress = asyncHandler(async (req, res, next) => {
     return abstractObj;
   });
 
-  return sendSuccess(res, 200, 'Abstracts pending review with progress retrieved successfully', abstractsWithStats, abstractsWithStats.length);
+  return sendSuccess(res, 200, 'Abstracts pending review with progress retrieved successfully', abstractsWithStats, abstractsWithStats && abstractsWithStats.length);
 });
 
 /**
@@ -2206,7 +2249,10 @@ const getAbstractsWithReviewProgress = asyncHandler(async (req, res, next) => {
  */
 const assignReviewersToAbstracts = async (req, res, next) => {
   const { eventId } = req.params; // Though eventId might not be strictly needed if abstracts are global
-  const { abstractIds, reviewerIds } = req.body;
+  const { abstractIds, reviewerIds  } = req.body || {};
+  if (!req.body) {
+    return StandardErrorHandler.sendError(res, 400, 'Request body is required');
+  };
 
   if (!Array.isArray(abstractIds) || abstractIds.length === 0) {
     return next(createApiError(400, 'Abstract IDs must be a non-empty array.'));
@@ -2241,16 +2287,16 @@ const assignReviewersToAbstracts = async (req, res, next) => {
 
     const results = await Promise.allSettled(updatePromises);
 
-    const successfulAssignments = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
-    const failedAssignments = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success));
+    const successfulAssignments = results.filter(r => r.status === 'fulfilled' && r?.value?.success).length;
+    const failedAssignments = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r?.value?.success));
     
     if (failedAssignments.length > 0) {
         // Partial success, or all failed.
         // You could return more detailed error messages if needed.
-        logger.error(`${failedAssignments.length} errors during bulk reviewer assignment for event ${eventId}.`);
+        logger.error(`${failedAssignments && failedAssignments.length} errors during bulk reviewer assignment for event ${eventId}.`);
          return res.status(207).json({ // Multi-Status
             success: false, // Or true if some succeeded
-            message: `Assignment completed with ${successfulAssignments} successes and ${failedAssignments.length} failures.`,
+            message: `Assignment completed with ${successfulAssignments} successes and ${failedAssignments && failedAssignments.length} failures.`,
             results: results.map(r => r.status === 'fulfilled' ? r.value : { success: false, error: r.reason?.message || 'Unknown error' })
         });
     }
@@ -2272,7 +2318,7 @@ exports.autoAssignReviewers = asyncHandler(async (req, res, next) => {
   if (!event) {
     return next(createApiError(404, 'Event not found'));
   }
-  if (!event.abstractSettings || !Array.isArray(event.abstractSettings.categories)) {
+  if (!event.abstractSettings || !Array.isArray(event?.abstractSettings?.categories)) {
     return next(createApiError(400, 'No abstract categories configured for this event'));
   }
   const abstracts = await Abstract.find({ event: eventId });
@@ -2280,19 +2326,19 @@ exports.autoAssignReviewers = asyncHandler(async (req, res, next) => {
   for (const abstract of abstracts) {
     if (!abstract.category) continue;
     // Only assign if not already assigned
-    if (abstract.reviewDetails && Array.isArray(abstract.reviewDetails.assignedTo) && abstract.reviewDetails.assignedTo.length > 0) continue;
+    if (abstract.reviewDetails && Array.isArray(abstract?.reviewDetails?.assignedTo) && abstract?.reviewDetails?.assignedTo.length > 0) continue;
     let catId = abstract.category;
     if (catId && typeof catId === 'object' && catId.$oid) catId = catId.$oid;
     else if (catId && catId._id) catId = catId._id;
     else if (catId) catId = String(catId);
-    const match = event.abstractSettings.categories.find(cat => {
+    const match = event?.abstractSettings?.categories.find(cat => {
       let embeddedId = cat._id;
       if (embeddedId && typeof embeddedId === 'object' && embeddedId.$oid) embeddedId = embeddedId.$oid;
       else if (embeddedId && embeddedId._id) embeddedId = embeddedId._id;
       else if (embeddedId) embeddedId = String(embeddedId);
       return embeddedId === catId;
     });
-    if (match && Array.isArray(match.reviewerIds) && match.reviewerIds.length > 0) {
+    if (match && Array.isArray(match.reviewerIds) && match?.reviewerIds?.length > 0) {
       abstract.reviewDetails = abstract.reviewDetails || {};
       abstract.reviewDetails.assignedTo = match.reviewerIds.map(id => id.toString());
       await abstract.save();
@@ -2307,19 +2353,19 @@ exports.autoAssignReviewers = asyncHandler(async (req, res, next) => {
  * Author uploads registration proof (image/pdf). Only allowed on own abstract with status accepted.
  */
 exports.uploadRegistrationProof = asyncHandler(async (req, res, next) => {
-  const abstractId = req.params.id;
+  const abstractId = req?.params?.id;
   const abstract = await Abstract.findById(abstractId);
   if (!abstract) return next(createApiError(404, 'Abstract not found'));
 
   // Verify owner
-  if (req.author && (!abstract.author || !abstract.author.equals(req.author._id))) {
+  if (req.author && (!abstract.author || !abstract?.author?.equals(req?.author?._id))) {
     return next(createApiError(403, 'Not authorized to upload proof for this abstract'));
   }
 
-  if (!req.files || !req.files.file) {
+  if (!req.files || !req?.files?.file) {
     return next(createApiError(400, 'No file uploaded'));
   }
-  const file = req.files.file;
+  const file = req?.files?.file;
   const uploadsDir = buildUploadDir('registration_proofs');
   if(!fs.existsSync(uploadsDir)){
     fs.mkdirSync(uploadsDir,{recursive:true});
@@ -2339,7 +2385,7 @@ exports.uploadRegistrationProof = asyncHandler(async (req, res, next) => {
  * Admin verifies proof (sets registrationVerified=true)
  */
 exports.verifyRegistrationProof = asyncHandler(async (req, res, next) => {
-  const abstractId = req.params.id;
+  const abstractId = req?.params?.id;
   const abstract = await Abstract.findById(abstractId);
   if (!abstract) return next(createApiError(404, 'Abstract not found'));
   abstract.registrationVerified = true;
@@ -2351,16 +2397,16 @@ exports.verifyRegistrationProof = asyncHandler(async (req, res, next) => {
  * Author uploads final submission file (after registration verified)
  */
 exports.uploadFinalFile = asyncHandler(async (req, res, next) => {
-  const abstractId = req.params.id;
+  const abstractId = req?.params?.id;
   const abstract = await Abstract.findById(abstractId);
   if (!abstract) return next(createApiError(404, 'Abstract not found'));
   if (!abstract.registrationVerified) {
     return next(createApiError(400, 'Registration not verified yet'));
   }
-  if (!req.files || !req.files.file) {
+  if (!req.files || !req?.files?.file) {
     return next(createApiError(400, 'No file uploaded'));
   }
-  const file = req.files.file;
+  const file = req?.files?.file;
   const uploadsDir = buildUploadDir('final_abstracts');
   if(!fs.existsSync(uploadsDir)){
     fs.mkdirSync(uploadsDir,{recursive:true});

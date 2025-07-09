@@ -1,6 +1,6 @@
 const express = require('express');
 const paymentController = require('../controllers/paymentController');
-const authController = require('../controllers/authController');
+const { protect, restrict } = require('../middleware/auth.middleware');
 
 const router = express.Router();
 
@@ -13,10 +13,10 @@ router.get('/:id/invoice', paymentController.getInvoice);
 router.get('/:id/receipt', paymentController.getReceipt);
 
 // Protected routes after this middleware
-router.use(authController.protect);
+router.use(protect);
 
 // Admin and organizer routes
-router.use('/gateways', authController.restrictTo('admin', 'organizer'));
+router.use('/gateways', restrict('admin', 'organizer'));
 
 router
   .route('/gateways')
@@ -29,7 +29,7 @@ router
   .delete(paymentController.deletePaymentGateway);
 
 // Invoice template routes
-router.use('/invoice-templates', authController.restrictTo('admin', 'organizer'));
+router.use('/invoice-templates', restrict('admin', 'organizer'));
 
 router
   .route('/invoice-templates')
@@ -42,9 +42,15 @@ router
   .delete(paymentController.deleteInvoiceTemplate);
 
 // Payment management routes
-router.use(authController.restrictTo('admin', 'organizer'));
+router.use(restrict('admin', 'organizer'));
 
 router.get('/:id', paymentController.getPaymentById);
 router.post('/:id/refund', paymentController.refundPayment);
+
+// Bulk payment links endpoint
+router.post('/bulk-payment-links', paymentController.sendBulkPaymentLinks);
+
+// Generate individual payment link endpoint
+router.post('/generate-payment-link', restrict('admin', 'staff'), paymentController.generatePaymentLink);
 
 module.exports = router; 

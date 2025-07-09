@@ -52,6 +52,8 @@ const consoleFormat = format.combine(
 // Custom format for file output
 const fileFormat = format.combine(
   format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  format.errors({ stack: true }),
+  format.splat(),
   format.json()
 );
 
@@ -62,7 +64,7 @@ const transportOptions = [
   })
 ];
 
-// Add file transport in production
+// Add file transports in production
 if (process.env.NODE_ENV === 'production') {
   transportOptions.push(
     new transports.File({
@@ -81,43 +83,43 @@ if (process.env.NODE_ENV === 'production') {
   );
 }
 
-// Create logger instance
-const logger = winston.createLogger({
-  level: level(),
-  levels,
-  transports: transportOptions,
-  exitOnError: false
-});
+// Define exception and rejection handlers
+const exceptionHandlers = [
+  new transports.Console({
+    format: consoleFormat
+  })
+];
 
-// Create a stream object for Morgan HTTP logger
-logger.stream = {
-  write: (message) => logger.http(message.trim()),
-};
+const rejectionHandlers = [
+  new transports.Console({
+    format: consoleFormat
+  })
+];
 
-// Define exception handlers
-const exceptionHandlers = [];
-const rejectionHandlers = [];
-
-// Try to add exception and rejection handlers
-try {
-  exceptionHandlers.push(new transports.File({
-    filename: path.join('logs', 'exceptions.log'),
-    maxsize: 5242880, // 5MB
-    maxFiles: 5,
-  }));
-  
-  rejectionHandlers.push(new transports.File({
-    filename: path.join('logs', 'rejections.log'),
-    maxsize: 5242880, // 5MB
-    maxFiles: 5,
-  }));
-} catch (error) {
-  console.error('Error setting up exception/rejection handlers:', error);
-  // Continue with just console handling
+// Try to add file-based exception and rejection handlers in production
+if (process.env.NODE_ENV === 'production') {
+  try {
+    exceptionHandlers.push(new transports.File({
+      filename: path.join('logs', 'exceptions.log'),
+      format: fileFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 5,
+    }));
+    
+    rejectionHandlers.push(new transports.File({
+      filename: path.join('logs', 'rejections.log'),
+      format: fileFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 5,
+    }));
+  } catch (error) {
+    console.error('Error setting up file-based exception/rejection handlers:', error);
+    // Continue with just console handling
+  }
 }
 
-// Create the logger
-const loggerInstance = winston.createLogger({
+// Create the consolidated logger instance
+const logger = winston.createLogger({
   level: level(),
   levels,
   format: format.combine(
@@ -132,5 +134,10 @@ const loggerInstance = winston.createLogger({
   exitOnError: false,
 });
 
-// Export logger
-module.exports = loggerInstance; 
+// Create a stream object for Morgan HTTP logger
+logger.stream = {
+  write: (message) => logger.http(message.trim()),
+};
+
+// Export the single logger instance
+module.exports = logger; 

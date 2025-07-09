@@ -12,13 +12,19 @@ const {
   importRegistrations,
   exportRegistrationsController,
   getRegistrationStatistics,
-  getRegistrationDetailsByScan
+  getRegistrationDetailsByScan,
+  // Component-based registration functions removed - functionality moved to event settings
 } = require('../controllers/registration.controller');
 
 // Import the router for resources related to a specific registration
 const registrationResourceRouter = require('./registrationResource.routes');
 
-// Protect all routes defined here
+// =====================================================
+// Component-based registration routes removed
+// Functionality integrated into normal registration flow
+// =====================================================
+
+// Protect all remaining routes defined below
 router.use(protect);
 
 // Routes relative to the mount point (e.g., /api/events/:id/registrations)
@@ -57,5 +63,7 @@ router.route('/:registrationId')
 // Route for check-in
 router.route('/:registrationId/check-in')
   .patch(checkInRegistration); // Handles PATCH /api/events/:id/registrations/:registrationId/check-in
+
+// Component modification routes removed - partial day registration handled in settings
 
 module.exports = router; 

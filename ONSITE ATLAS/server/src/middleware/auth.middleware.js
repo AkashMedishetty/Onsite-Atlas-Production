@@ -1,11 +1,18 @@
 const jwt = require('jsonwebtoken');
-const { User, Registration, EventSponsor } = require('../models');
+const { User, Registration, EventSponsor, EventClient } = require('../models');
 const { createApiError } = require('./error');
 const logger = require('../utils/logger');
 const asyncHandler = require('./async');
 const ErrorResponse = require('../utils/errorResponse');
 const config = require('../config/config');
-const EventClient = require('../models/EventClient');
+
+/**
+ * Get the JWT secret consistently across all auth functions
+ * @returns {string} JWT secret
+ */
+const getJwtSecret = () => {
+  return config?.jwt?.secret || process?.env?.JWT_SECRET;
+};
 
 /**
  * Middleware to protect routes that require authentication
@@ -17,32 +24,14 @@ const protect = asyncHandler(async (req, res, next) => {
   let token;
 
   if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith('Bearer')
+    req?.headers?.authorization &&
+    req?.headers?.authorization.startsWith('Bearer')
   ) {
     // Set token from Bearer token in header
-    token = req.headers.authorization.split(' ')[1];
+    token = req?.headers?.authorization.split(' ')[1];
   }
   
   console.log('[Protect Middleware] Path:', req.originalUrl);
-  
-  // ADDED: Conditional bypass for registrant ID lookup
-  if (
-    req.method === 'GET' &&
-    req.query.search &&                          // Check for 'search' query param
-    req.query.limit && parseInt(req.query.limit, 10) === 1 // Check for 'limit=1' query param
-  ) {
-    // Check if the path matches the pattern for event-specific registration lookup
-    // e.g., /api/events/someEventId/registrations
-    const eventIdPattern = /^\/api\/events\/[a-f0-9]{24}\/registrations/i; 
-    if (eventIdPattern.test(req.baseUrl + req.path)) { // Test against the combined base and path
-        console.log('[Protect Middleware] Registrant ID lookup detected, bypassing token check for:', req.originalUrl);
-        return next(); // Bypass token check for this specific lookup
-    }
-  }
-  // END ADDED CODE
-
-  console.log('[Protect Middleware] Received token (after potential bypass check):', token);
 
   // Make sure token exists
   if (!token) {
@@ -51,8 +40,14 @@ const protect = asyncHandler(async (req, res, next) => {
   }
 
   try {
-    // Verify token
-    const decoded = jwt.verify(token, config.jwt.secret || process.env.JWT_SECRET);
+    // Verify token using consistent JWT secret
+    const secret = getJwtSecret();
+    if (!secret) {
+      logger.error('[Protect] JWT_SECRET not configured.');
+      return next(new ErrorResponse('Server configuration error: JWT secret not set', 500));
+    }
+    
+    const decoded = jwt.verify(token, secret);
     console.log('[Protect Middleware] Token decoded successfully:', decoded);
 
     // Check token type and query appropriate model
@@ -62,7 +57,7 @@ const protect = asyncHandler(async (req, res, next) => {
         console.log('[Protect Middleware] Registrant not found for decoded token ID:', decoded.id);
         return next(new ErrorResponse('Not authorized, registrant not found', 401));
       }
-      console.log(`[Protect Middleware] Registrant (ID: ${req.registrant._id}) authenticated for ${req.originalUrl}`);
+      console.log(`[Protect Middleware] Registrant (ID: ${req?.registrant?._id}) authenticated for ${req.originalUrl}`);
       // Optionally, you might set req.user = req.registrant here for compatibility,
       // but it's cleaner to use req.registrant for registrants.
     } else if (decoded.type === 'sponsor') { // Added case for sponsor
@@ -71,7 +66,7 @@ const protect = asyncHandler(async (req, res, next) => {
         console.log('[Protect Middleware] Sponsor not found for decoded token ID:', decoded.id);
         return next(new ErrorResponse('Not authorized, sponsor not found', 401));
       }
-      console.log(`[Protect Middleware] Sponsor (ID: ${req.sponsor._id}, SponsorAppID: ${req.sponsor.sponsorId}) authenticated for ${req.originalUrl}`);
+      console.log(`[Protect Middleware] Sponsor (ID: ${req?.sponsor?._id}, SponsorAppID: ${req?.sponsor?.sponsorId}) authenticated for ${req.originalUrl}`);
       req.user = { ...decoded };
       req.user.sponsorDetails = req.sponsor;
     } else if (decoded.type === 'client') {
@@ -96,11 +91,11 @@ const protect = asyncHandler(async (req, res, next) => {
         console.log('[Protect Middleware] User not found for decoded token ID:', decoded.id);
         return next(new ErrorResponse('Not authorized, user not found', 401));
       }
-      console.log(`[Protect Middleware] User ${req.user.email} (ID: ${req.user._id}, Role: ${req.user.role}) authenticated for ${req.originalUrl}`);
+      console.log(`[Protect Middleware] User ${req?.user?.email} (ID: ${req?.user?._id}, Role: ${req?.user?.role}) authenticated for ${req.originalUrl}`);
     }
 
     next();
-  } catch (err) {
+  } catch (error) {
     console.error('[Protect Middleware] Token verification failed:', err.message);
     // More detailed error logging for different JWT errors
     if (err.name === 'JsonWebTokenError') {
@@ -118,10 +113,10 @@ const protect = asyncHandler(async (req, res, next) => {
 const protectRegistrant = asyncHandler(async (req, res, next) => {
   try {
     let token;
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-      token = req.headers.authorization.split(' ')[1];
-    } else if (req.cookies && req.cookies.registrantToken) { 
-      token = req.cookies.registrantToken;
+    if (req?.headers?.authorization.startsWith('Bearer')) {
+      token = req?.headers?.authorization.split(' ')[1];
+    } else if (req.cookies && req?.cookies?.registrantToken) { 
+      token = req?.cookies?.registrantToken;
     }
 
     if (!token) {
@@ -132,10 +127,11 @@ const protectRegistrant = asyncHandler(async (req, res, next) => {
     }
 
     try {
-      const secret = process.env.REGISTRANT_JWT_SECRET || process.env.JWT_SECRET;
+      // Use consistent JWT secret across all auth types
+      const secret = getJwtSecret();
       if (!secret) {
-        logger.error('[ProtectRegistrant] JWT_SECRET or REGISTRANT_JWT_SECRET not configured.');
-        return res.status(500).json({ success: false, message: 'Server configuration error: JWT secret not set.' });
+        logger.error('[ProtectRegistrant] JWT_SECRET not configured.');
+        return StandardErrorHandler.sendError(res, 500, 'Server configuration error: JWT secret not set.');
       }
       const decoded = jwt.verify(token, secret);
 
@@ -173,10 +169,7 @@ const protectRegistrant = asyncHandler(async (req, res, next) => {
     }
   } catch (error) {
     logger.error('Registrant auth middleware error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error in registrant auth middleware'
-    });
+    return StandardErrorHandler.sendError(res, 500, 'Server error in registrant auth middleware');
   }
 });
 
@@ -186,26 +179,27 @@ const protectRegistrant = asyncHandler(async (req, res, next) => {
 const protectAuthor = asyncHandler(async (req, res, next) => {
   try {
     let token;
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-      token = req.headers.authorization.split(' ')[1];
-    } else if (req.cookies && req.cookies.authorToken) {
-      token = req.cookies.authorToken;
+    if (req?.headers?.authorization.startsWith('Bearer')) {
+      token = req?.headers?.authorization.split(' ')[1];
+    } else if (req.cookies && req?.cookies?.authorToken) {
+      token = req?.cookies?.authorToken;
     }
 
     if (!token) {
       return res.status(401).json({ success: false, message: 'Author not authorized, no token provided' });
     }
 
-    const secret = process.env.AUTHOR_JWT_SECRET || process.env.JWT_SECRET;
+    // Use consistent JWT secret across all auth types
+    const secret = getJwtSecret();
     if (!secret) {
       logger.error('[ProtectAuthor] JWT secret not set');
-      return res.status(500).json({ success: false, message: 'Server configuration error: JWT secret not set.' });
+      return StandardErrorHandler.sendError(res, 500, 'Server configuration error: JWT secret not set.');
     }
 
     let decoded;
     try {
       decoded = jwt.verify(token, secret);
-    } catch (err) {
+    } catch (error) {
       const msg = err.name === 'TokenExpiredError' ? 'Token expired' : 'Invalid token';
       return res.status(401).json({ success: false, message: msg });
     }
@@ -215,6 +209,7 @@ const protectAuthor = asyncHandler(async (req, res, next) => {
     }
 
     const AuthorUser = require('../models/AuthorUser');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
     const author = await AuthorUser.findById(decoded.id);
     if (!author) {
       return res.status(401).json({ success: false, message: 'Author account not found' });
@@ -224,7 +219,7 @@ const protectAuthor = asyncHandler(async (req, res, next) => {
     next();
   } catch (error) {
     logger.error('Author auth middleware error:', error);
-    return res.status(500).json({ success: false, message: 'Server error in author auth middleware' });
+    return StandardErrorHandler.sendError(res, 500, 'Server error in author auth middleware');
   }
 });
 
@@ -242,10 +237,10 @@ const restrict = (...roles) => {
       });
     }
     
-    if (!roles.includes(req.user.role)) {
+    if (!roles.includes(req?.user?.role)) {
       return res.status(403).json({
         success: false,
-        message: `User role '${req.user.role}' not authorized to access this route. Allowed: ${roles.join(', ')}`
+        message: `User role '${req?.user?.role}' not authorized to access this route. Allowed: ${roles.join(', ')}`
       });
     }
     next();
@@ -257,19 +252,20 @@ const restrict = (...roles) => {
  */
 const protectClient = asyncHandler(async (req, res, next) => {
   let token;
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-    token = req.headers.authorization.split(' ')[1];
-  } else if (req.cookies && req.cookies.clientToken) {
-    token = req.cookies.clientToken;
+  if (req?.headers?.authorization.startsWith('Bearer')) {
+    token = req?.headers?.authorization.split(' ')[1];
+  } else if (req.cookies && req?.cookies?.clientToken) {
+    token = req?.cookies?.clientToken;
   }
   if (!token) {
     return res.status(401).json({ success: false, message: 'Client not authorized, no token provided' });
   }
   try {
-    const secret = process.env.CLIENT_JWT_SECRET || process.env.JWT_SECRET;
+    // Use consistent JWT secret across all auth types
+    const secret = getJwtSecret();
     if (!secret) {
-      logger.error('[ProtectClient] JWT_SECRET or CLIENT_JWT_SECRET not configured.');
-      return res.status(500).json({ success: false, message: 'Server configuration error: JWT secret not set.' });
+      logger.error('[ProtectClient] JWT_SECRET not configured.');
+      return StandardErrorHandler.sendError(res, 500, 'Server configuration error: JWT secret not set.');
     }
     const decoded = jwt.verify(token, secret);
     if (decoded.type !== 'client') {
@@ -297,7 +293,7 @@ const protectClient = asyncHandler(async (req, res, next) => {
 const protectAdmin = asyncHandler(async (req, res, next) => {
   // Use the generic protect middleware to populate req.user
   await protect(req, res, async function() {
-    if (!req.user || req.user.role !== 'admin') {
+    if (!req.user || req?.user?.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
     next();
@@ -310,5 +306,6 @@ module.exports = {
   protectAuthor,
   restrict,
   protectClient,
-  protectAdmin
+  protectAdmin,
+  getJwtSecret
 };

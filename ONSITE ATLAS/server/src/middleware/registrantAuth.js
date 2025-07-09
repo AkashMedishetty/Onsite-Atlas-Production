@@ -21,7 +21,7 @@ module.exports = asyncHandler(async (req, res, next) => {
   let decoded;
   try {
     decoded = await promisify(jwt.verify)(token, config.jwt.secret);
-  } catch (err) {
+  } catch (error) {
     if (err.name === 'TokenExpiredError') {
       return next(new ApiError(401, 'Token expired'));
     }

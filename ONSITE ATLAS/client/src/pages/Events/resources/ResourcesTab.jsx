@@ -29,59 +29,36 @@ const ResourcesTab = ({ eventId }) => {
   });
   const [error, setError] = useState(null);
   
+  // Consolidated data loading effect
   useEffect(() => {
     const fetchData = async () => {
       if (!eventId) {
         setLoading(false);
         return;
       }
-      setLoading(true); // Set loading true at the start of fetching
+      setLoading(true);
       setError(null);
       try {
         // Run both loaders concurrently and wait for them
         await Promise.all([loadResources(), loadStatistics()]);
       } catch (err) {
-        // Catch potential errors from either function (though they have internal catches)
-        console.error("Error during initial data fetch:", err);
-        setError("Failed to load initial resource data.");
+        console.error("Error during data fetch:", err);
+        setError("Failed to load resource data.");
       } finally {
-        setLoading(false); // Set loading false only after both are done
+        setLoading(false);
       }
     };
 
-    fetchData();
-  }, [eventId]); // Keep eventId dependency
-  
-  // useEffect to handle refresh requests from navigation state
-  useEffect(() => {
+    // Handle refresh from navigation state
     if (location.state?.refresh) {
       console.log('[ResourcesTab] Refresh triggered by navigation state.');
-      // Call the main data fetching logic
-      // Assuming fetchData encapsulates both loadResources and loadStatistics
-      // or create a combined refresh function if needed.
-      const fetchData = async () => {
-        if (!eventId) {
-          setLoading(false);
-          return;
-        }
-        setLoading(true);
-        setError(null);
-        try {
-          await Promise.all([loadResources(), loadStatistics()]);
-        } catch (err) {
-          console.error("[ResourcesTab] Error during state-triggered data refresh:", err);
-          setError("Failed to refresh resource data.");
-        }
-        setLoading(false); // Set loading false after fetching
-      };
       fetchData();
       // Clear the state to prevent re-refreshing
       navigate(location.pathname, { replace: true, state: {} });
+      return;
     }
-  }, [location.state, eventId, navigate]); // Added dependencies
-  
-  // Parse the resource type from URL if present
-  useEffect(() => {
+
+    // Parse the resource type from URL and set active tab
     const pathParts = location.pathname.split('/');
     if (pathParts.length >= 5) {
       const subPath = pathParts[4]; // After /events/{id}/resources/{subPath}
@@ -96,7 +73,10 @@ const ResourcesTab = ({ eventId }) => {
         setActiveTab(3);
       }
     }
-  }, [location.pathname]);
+
+    // Fetch data
+    fetchData();
+  }, [eventId, location.state, location.pathname, navigate]); // Consolidated dependencies
   
   const loadResources = async () => {
     if (!eventId) {
@@ -115,6 +95,14 @@ const ResourcesTab = ({ eventId }) => {
       console.log('Kits data loaded:', kitsData);
       console.log('Certificates data loaded:', certificatesData);
       console.log('Certificate Printing data loaded:', certificatePrintingData);
+      
+      // Debug the data structure to see what fields are available
+      if (foodData?.data?.length > 0) {
+        console.log('Sample food item structure:', foodData.data[0]);
+      }
+      if (kitsData?.data?.length > 0) {
+        console.log('Sample kit item structure:', kitsData.data[0]);
+      }
       
       // Check if the data is in the expected format
       // The API returns {success: true, data: Array(n)} or {success: true, count: n, data: Array(n)}
@@ -224,6 +212,41 @@ const ResourcesTab = ({ eventId }) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
     return date.toLocaleString();
+  };
+
+  // Helper function to get a readable resource name from various possible fields
+  const getResourceName = (item) => {
+    // Priority order for finding readable names:
+    // 1. resourceOption.name (backend formatted name)
+    // 2. resourceOptionName (denormalized name)
+    // 3. name or displayName fields
+    // 4. resourceOption as string (if not an ObjectId)
+    // 5. details.option (if not an ObjectId)
+    // 6. Fallback to 'N/A'
+    
+    if (item.resourceOption?.name) {
+      return item.resourceOption.name;
+    }
+    
+    if (item.resourceOptionName) {
+      return item.resourceOptionName;
+    }
+    
+    if (item.name || item.displayName) {
+      return item.name || item.displayName;
+    }
+    
+    if (typeof item.resourceOption === 'string' && !item.resourceOption.match(/^[a-f0-9]{24}$/i)) {
+      return item.resourceOption;
+    }
+    
+    if (item.details?.option && !item.details.option.match(/^[a-f0-9]{24}$/i)) {
+      return item.details.option;
+    }
+    
+    // If we reach here, it's likely an ObjectId that wasn't resolved
+    console.warn('Resource name could not be resolved for item:', item);
+    return 'N/A';
   };
   
   if (loading) {
@@ -456,7 +479,7 @@ const ResourcesTab = ({ eventId }) => {
                               {item.registration?.category?.name || item.category?.name || item.category || 'N/A'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {item.resourceOption?.name || item.resourceName || item.details?.option || 'N/A'}
+                              {getResourceName(item)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {formatDateTime(item.timestamp || item.actionDate || item.createdAt)}
@@ -542,9 +565,9 @@ const ResourcesTab = ({ eventId }) => {
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {item.registration?.category?.name || item.category?.name || item.category || 'N/A'}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {item.resourceOption?.name || item.resourceName || item.details?.option || 'N/A'}
-                            </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                               {getResourceName(item)}
+                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {formatDateTime(item.timestamp || item.actionDate || item.createdAt)}
                             </td>
@@ -630,7 +653,7 @@ const ResourcesTab = ({ eventId }) => {
                               {item.registration?.category?.name || item.category?.name || item.category || 'N/A'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {item.resourceOption?.name || item.resourceName || item.details?.option || 'N/A'}
+                              {getResourceName(item)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {formatDateTime(item.timestamp || item.actionDate || item.createdAt)}
@@ -717,7 +740,7 @@ const ResourcesTab = ({ eventId }) => {
                               {item.registration?.category?.name || item.category?.name || item.category || 'N/A'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {item.resourceOption?.name || item.resourceName || item.details?.option || 'N/A'}
+                              {getResourceName(item)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {formatDateTime(item.timestamp || item.actionDate || item.createdAt)}

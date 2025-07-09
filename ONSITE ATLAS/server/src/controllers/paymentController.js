@@ -1,6 +1,7 @@
 const { PaymentGateway, Payment, InvoiceTemplate, Event, Registration } = require('../models');
 const { ApiError } = require('../utils/ApiError');
 const asyncHandler = require('../middleware/async');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 /**
  * Get payment gateways
@@ -461,6 +462,53 @@ exports.getReceipt = asyncHandler(async (req, res, next) => {
     status: 'success',
     data: {
       payment
+    }
+  });
+});
+
+/**
+ * Generate individual payment link for registration
+ */
+exports.generatePaymentLink = asyncHandler(async (req, res, next) => {
+  const { registrationId, eventId } = req.body;
+  
+  // Validate input
+  if (!registrationId || !eventId) {
+    return next(new ApiError('Registration ID and Event ID are required', 400));
+  }
+  
+  // Check if event exists
+  const event = await Event.findById(eventId);
+  if (!event) {
+    return next(new ApiError('Event not found', 404));
+  }
+  
+  // Check if registration exists
+  const registration = await Registration.findById(registrationId);
+  if (!registration) {
+    return next(new ApiError('Registration not found', 404));
+  }
+  
+  // Check if registration is already paid
+  if (registration.paymentStatus === 'completed') {
+    return next(new ApiError('Registration is already paid', 400));
+  }
+  
+  // Generate payment link URL
+  const paymentLink = `${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/${eventId}/${registrationId}`;
+  
+  res.status(200).json({
+    status: 'success',
+    message: 'Payment link generated successfully',
+    data: {
+      paymentLink,
+      registration: {
+        id: registration._id,
+        registrationId: registration.registrationId,
+        name: `${registration.personalInfo?.firstName || ''} ${registration.personalInfo?.lastName || ''}`.trim(),
+        email: registration.personalInfo?.email,
+        paymentStatus: registration.paymentStatus
+      }
     }
   });
 }); 

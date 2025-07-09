@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const { sendSuccess, sendPaginated } = require('../utils/responseFormatter');
 const asyncHandler = require('express-async-handler');
 const mongoose = require('mongoose');
+const StandardErrorHandler = require('../utils/standardErrorHandler');
 
 /**
  * Get all categories for an event
@@ -267,7 +268,7 @@ const getAllCategories = asyncHandler(async (req, res) => {
     try {
       categories = await Category.find(query);
       console.log(`Found ${categories.length} categories`);
-    } catch (dbError) {
+    } catch (error) {
       console.error(`Database error fetching categories: ${dbError.message}`);
     }
     

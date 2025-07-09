@@ -8,6 +8,8 @@ import AbstractsTab from './AbstractsTab';
 import BadgesTab from './BadgesTab';
 import EmailTab from './EmailTab';
 import PaymentTab from './PaymentTab';
+import PricingRulesTab from './PricingRulesTab';
+import WorkshopsTab from './WorkshopsTab';
 
 const SettingsTab = ({ event, setEvent, setFormChanged }) => {
   const location = useLocation();
@@ -22,7 +24,9 @@ const SettingsTab = ({ event, setEvent, setFormChanged }) => {
         'abstracts': 3,
         'badges': 4,
         'email': 5,
-        'payment': 6
+        'payment': 6,
+        'pricing': 7,
+        'workshops': 8,
       };
       
       const tabIndex = tabMapping[location.state.settingsTab];
@@ -45,7 +49,9 @@ const SettingsTab = ({ event, setEvent, setFormChanged }) => {
           { id: "abstracts", label: "Abstracts" },
           { id: "badges", label: "Badges" },
           { id: "email", label: "Email" },
-          { id: "payment", label: "Payment" }
+          { id: "payment", label: "Payment" },
+          { id: "pricing", label: "Pricing" },
+          { id: "workshops", label: "Workshops" }
         ]}
         activeTab={activeTab}
         onChange={setActiveTab}
@@ -60,6 +66,8 @@ const SettingsTab = ({ event, setEvent, setFormChanged }) => {
         {activeTab === 4 && <BadgesTab event={event} setEvent={setEvent} setFormChanged={setFormChanged} />}
         {activeTab === 5 && <EmailTab event={event} setEvent={setEvent} setFormChanged={setFormChanged} />}
         {activeTab === 6 && <PaymentTab event={event} setEvent={setEvent} setFormChanged={setFormChanged} />}
+        {activeTab === 7 && <PricingRulesTab />}
+        {activeTab === 8 && <WorkshopsTab />}
       </div>
     </div>
   );

@@ -38,7 +38,7 @@ router.get('/events/:eventId/abstracts', registrantAuth, registrantPortalControl
 router.post('/events/:eventId/abstracts', registrantAuth, validateBody(registrantSchema.submitAbstract), registrantPortalController.submitAbstractForEvent);
 
 // Log before defining the specific abstract GET route
-console.log("!!!!!!!!!!!!!!!!!!!!!!!!!!!! DEFINING ROUTE: GET /events/:eventId/abstracts/:abstractId IN registrantPortalRoutes.js !!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+logger.info("!!!!!!!!!!!!!!!!!!!!!!!!!!!! DEFINING ROUTE: GET /events/:eventId/abstracts/:abstractId IN registrantPortalRoutes.js !!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 logger.info("!!!!!!!!!!!!!!!!!!!!!!!!!!!! Using LOGGER: DEFINING ROUTE: GET /events/:eventId/abstracts/:abstractId IN registrantPortalRoutes.js !!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
 router.get('/events/:eventId/abstracts/:abstractId', registrantAuth, registrantPortalController.getAbstractByIdForEvent);

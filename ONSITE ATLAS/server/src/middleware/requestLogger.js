@@ -41,7 +41,7 @@ const requestLogger = (req, res, next) => {
           console.log(JSON.stringify(responseData, null, 2));
         }
       }
-    } catch (e) {
+    } catch (error) {
       // Not JSON data, just log the status
       console.log('Non-JSON response');
     }

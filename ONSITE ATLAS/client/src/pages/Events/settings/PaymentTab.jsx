@@ -1,235 +1,253 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Switch, Select, Input } from '../../../components/common';
+import { Card, Switch, Select, Input, Button, Spinner } from '../../../components/common';
+import { useParams } from 'react-router-dom';
+import paymentConfigService from '../../../services/paymentConfigService';
+import eventService from '../../../services/eventService';
 
-const PaymentTab = ({ event, updateEvent, onFormChange }) => {
-  // *** Add check for event existence early ***
-  if (!event) {
-      return <div className="p-4 text-gray-500 dark:text-gray-400">Loading event data...</div>;
-  }
+const providerFields = {
+  razorpay: [
+    { id: 'keyId', label: 'Key ID' },
+    { id: 'keySecret', label: 'Key Secret', type: 'password' },
+    { id: 'webhookSecret', label: 'Webhook Secret', type: 'password' },
+  ],
+  instamojo: [
+    { id: 'apiKey', label: 'API Key' },
+    { id: 'authToken', label: 'Auth Token', type: 'password' },
+    { id: 'hmacSalt', label: 'HMAC Salt', type: 'password' },
+  ],
+  stripe: [
+    { id: 'secretKey', label: 'Secret Key', type: 'password' },
+    { id: 'webhookSecret', label: 'Webhook Secret', type: 'password' },
+  ],
+  phonepe: [
+    { id: 'merchantId', label: 'Merchant ID' },
+    { id: 'saltKey', label: 'Salt Key', type: 'password' },
+    { id: 'saltIndex', label: 'Salt Index' },
+  ],
+  cashfree: [
+    { id: 'appId', label: 'App ID' },
+    { id: 'secretKey', label: 'Secret Key', type: 'password' },
+  ],
+  payu: [
+    { id: 'merchantKey', label: 'Merchant Key' },
+    { id: 'merchantSalt', label: 'Merchant Salt', type: 'password' },
+    { id: 'authHeader', label: 'Auth Header (Base64 key:salt)' },
+  ],
+  paytm: [
+    { id: 'mid', label: 'MID' },
+    { id: 'key', label: 'Secret Key', type: 'password' },
+  ],
+};
 
-  // Initialize payment settings if they don't exist
-  useEffect(() => {
-    // Now we know 'event' is defined, but check 'paymentSettings'
-    if (!event.paymentSettings) {
-      const defaultPaymentSettings = {
-        enabled: false,
-        allowRegistrationWithoutPayment: false,
-        currency: 'USD',
-        gateway: 'stripe',
-        categoryPricing: [
-          { category: 'Attendee', price: 499 },
-          { category: 'Student', price: 199 },
-          { category: 'Speaker', price: 0 },
-          { category: 'VIP', price: 999 }
-        ],
-        stripe: {
-          publishableKey: '',
-          secretKey: ''
-        }
-      };
+const providerOptions = Object.keys(providerFields).map(p=>({ value:p, label:p.toUpperCase() }));
+
+const PaymentTab = () => {
+  const { id: eventId } = useParams();
+  const [config, setConfig] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [dirty,setDirty]=useState(false);
+  const [event, setEvent] = useState(null);
+
+  // load config
+  useEffect(()=>{
+    if(!eventId) return;
+    (async()=>{
+      const res = await paymentConfigService.get(eventId);
+      setConfig(res.data || res.paymentConfig || res);
+      // fetch categories for category-wise toggle
+      const catRes = await eventService.getEventCategories(eventId);
+      setCategories(catRes.data || catRes.categories || []);
+      const eventRes = await eventService.getEventById(eventId);
+      setEvent(eventRes.data || eventRes.event || eventRes);
+    })();
+  },[eventId]);
+
+  if(!config) return <div className="p-4"><Spinner size="sm"/> Loading payment config…</div>;
+
+  const updateField = (path,val)=>{
+    setConfig(prev=>{
+      const next={...prev};
+      // simple path handling provider/credentials/extra
+      if(path==="provider"||path==="mode") next[path]=val;
+      else if(path.startsWith('cred.')){
+        next.credentials={...(next.credentials||{})};
+        next.credentials[path.slice(5)]=val;
+      } else if(path.startsWith('extra.')){
+        next.extra={...(next.extra||{})};
+        next.extra[path.slice(6)]=val;
+      }
+      setDirty(true);
+      return next;
+    });
+  };
+
+  const save = async()=>{
+    if(!dirty) return;
+    setSaving(true);
+    try {
+      // Save payment config
+      await paymentConfigService.update(eventId, config);
       
-      if (typeof updateEvent === 'function') { 
-          updateEvent(prevEvent => ({ 
-            ...prevEvent,
-            paymentSettings: defaultPaymentSettings
-          }));
-          if (typeof onFormChange === 'function') {
-              onFormChange(true);
-          }
+      // Save event changes if event has been modified (e.g., accompanying person settings)
+      if (event && event.accompanyingPersonSettings) {
+        await eventService.updateEvent(eventId, {
+          accompanyingPersonSettings: event.accompanyingPersonSettings
+        });
       }
-    }
-  }, [event, updateEvent, onFormChange]);
-
-  // Return placeholder if event data isn't loaded yet or paymentSettings missing
-  // *** This specific check might be redundant now due to the top-level check, but keep for safety ***
-  if (!event.paymentSettings) {
-    return <div className="text-gray-500">Initializing payment settings...</div>;
-  }
-
-  const paymentSettings = event.paymentSettings;
-
-  const handlePaymentSettingChange = (settingName, value) => {
-      if (typeof updateEvent === 'function') {
-        updateEvent(prevEvent => ({
-          ...prevEvent,
-          paymentSettings: {
-            ...prevEvent.paymentSettings,
-            [settingName]: value
-          }
-        }));
-        if (typeof onFormChange === 'function') {
-            onFormChange(true);
-        }
-      }
-  };
-
-  const handleStripeKeyChange = (keyType, value) => {
-      if (typeof updateEvent === 'function') {
-          updateEvent(prevEvent => ({
-              ...prevEvent,
-              paymentSettings: {
-                  ...prevEvent.paymentSettings,
-                  stripe: {
-                      ...prevEvent.paymentSettings.stripe,
-                      [keyType]: value
-                  }
-              }
-          }));
-          if (typeof onFormChange === 'function') {
-              onFormChange(true);
-          }
-      }
-  };
-
-  const handlePriceChange = (category, value) => {
-    if (typeof updateEvent === 'function') {
-      const updatedPricing = paymentSettings.categoryPricing?.map(item => {
-        if (item.category === category) {
-          return { ...item, price: value === 'free' ? 0 : Number(value) };
-        }
-        return item;
-      }) || [];
-
-      updateEvent(prevEvent => ({
-        ...prevEvent,
-        paymentSettings: {
-          ...prevEvent.paymentSettings,
-          categoryPricing: updatedPricing
-        }
-      }));
-      if (typeof onFormChange === 'function') {
-          onFormChange(true);
-      }
+      
+      setSaving(false); 
+      setDirty(false);
+      alert('Saved');
+    } catch (error) {
+      setSaving(false);
+      console.error('Save error:', error);
+      alert('Error saving: ' + (error.message || 'Unknown error'));
     }
   };
 
-  // Example helper (can be removed if pricing is handled elsewhere)
-  const formatPrice = (price, currency) => {
-    if (price === 0) return 'Free';
-    return `${currency || 'USD'} ${price}`
-  };
+  const fields = providerFields[config.provider] || [];
 
-  const currencyOptions = [
-    { value: 'USD', label: 'USD - US Dollar' },
-    { value: 'EUR', label: 'EUR - Euro' },
-    { value: 'GBP', label: 'GBP - British Pound' },
-    { value: 'INR', label: 'INR - Indian Rupee' },
-    // Add more currencies as needed
+  const offlineOptions=[{value:'cash',label:'Cash'},{value:'draft',label:'Demand Draft'},{value:'bank-transfer',label:'Bank Transfer'}];
+
+  const extraBooleanFields=[
+    {id:'paymentsEnabled',label:'Payments Enabled'},
+    {id:'paymentRequired',label:'Payment Required'},
+    {id:'autoInvoice',label:'Auto-generate Invoice'},
+  ];
+  const extraNumberFields=[
+    {id:'seatHoldTtlMinutes',label:'Seat-hold TTL (minutes)'},
+    {id:'paymentWindowMinutes',label:'Payment-window (minutes)'},
+    {id:'minimumPercentage',label:'Minimum % (for partial payments)'},
+    {id:'gstPercentage',label:'GST %'},
+    {id:'vatPercentage',label:'VAT %'},
+    {id:'convenienceFeePercentage',label:'Convenience Fee %'},
+    {id:'fixedFee',label:'Fixed Fee (₹)'},
+    {id:'retryLimit',label:'Webhook Retry Limit'},
+  ];
+  const extraTextFields=[
+    {id:'currency',label:'Currency (ISO)'},
+    {id:'callbackUrl',label:'Callback URL'},
+    {id:'webhookUrl',label:'Webhook URL'},
+    {id:'orderPrefix',label:'Order Prefix'},
+    {id:'themeColor',label:'Theme Color'},
+    {id:'statementDescriptor',label:'Statement Descriptor'},
   ];
 
-  const gatewayOptions = [
-    { value: 'stripe', label: 'Stripe' },
-    { value: 'paypal', label: 'PayPal (Coming Soon)', disabled: true },
-    // Add other gateways
-  ];
-
-  // Placeholder return with basic controls
   return (
     <div className="space-y-6">
-      <Card title="Payment Gateway Configuration" className="bg-white dark:bg-gray-800">
+      <Card title="Gateway Settings" className="bg-white">
         <div className="space-y-4 p-4">
-          <div className="flex items-center justify-between">
-            <label htmlFor="paymentEnabled" className="text-sm font-medium text-gray-700 dark:text-gray-300">Enable Online Payments</label>
-            <Switch
-              id="paymentEnabled"
-              checked={paymentSettings.enabled || false}
-              onChange={(checked) => handlePaymentSettingChange('enabled', checked)}
-            />
+          <div>
+            <label className="block text-sm font-medium mb-1">Provider</label>
+            <Select value={config.provider} options={providerOptions} onChange={val=>updateField('provider', val)} />
           </div>
-
-          {paymentSettings.enabled && (
-            <>
-              <div className="flex items-center justify-between">
-                <label htmlFor="allowRegistrationWithoutPayment" className="text-sm font-medium text-gray-700 dark:text-gray-300">Allow Registration Without Immediate Payment</label>
-                <Switch
-                  id="allowRegistrationWithoutPayment"
-                  checked={paymentSettings.allowRegistrationWithoutPayment || false}
-                  onChange={(checked) => handlePaymentSettingChange('allowRegistrationWithoutPayment', checked)}
-                />
+          <div>
+            <label className="block text-sm font-medium mb-1">Mode</label>
+            <Select value={config.mode} options={[{value:'test',label:'Test'},{value:'live',label:'Live'}]} onChange={val=>updateField('mode', val)} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {fields.map(f=>(
+              <div key={f.id}>
+                <label className="block text-sm font-medium mb-1">{f.label}</label>
+                <Input type={f.type||'text'} value={(config.credentials||{})[f.id]||''} onChange={e=>updateField(`cred.${f.id}`,e.target.value)} />
               </div>
+            ))}
+          </div>
+          <div className="text-right pt-2">
+            <Button onClick={save} disabled={saving || !dirty}>{saving?'Saving…':'Save'}</Button>
+          </div>
+        </div>
+      </Card>
 
-              <div>
-                <label htmlFor="currency" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Default Currency</label>
-                <Select
-                  id="currency"
-                  options={currencyOptions}
-                  value={paymentSettings.currency || 'USD'}
-                  onChange={(e) => handlePaymentSettingChange('currency', e.target.value)}
-                  className="mt-1 w-full"
-                />
-              </div>
+      <Card title="Global Toggles" className="bg-white">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4">
+          {extraBooleanFields.map(f=> (
+            <Switch key={f.id} label={f.label} checked={!!(config.extra||{})[f.id]} onChange={v=>updateField(`extra.${f.id}`,v)} />
+          ))}
+        </div>
+      </Card>
 
-              <div>
-                <label htmlFor="gateway" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Payment Gateway</label>
-                <Select
-                  id="gateway"
-                  options={gatewayOptions}
-                  value={paymentSettings.gateway || 'stripe'}
-                  onChange={(e) => handlePaymentSettingChange('gateway', e.target.value)}
-                  className="mt-1 w-full"
-                />
-              </div>
-
-              {/* Stripe Specific Settings */}
-              {paymentSettings.gateway === 'stripe' && (
-                 <div className="mt-4 border-t pt-4 space-y-4">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">Stripe Settings</h3>
-                     <div>
-                         <label htmlFor="stripePublishableKey" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Publishable Key</label>
-                         <Input
-                            id="stripePublishableKey"
-                            type="text"
-                            placeholder="pk_test_..."
-                            value={paymentSettings.stripe?.publishableKey || ''}
-                            onChange={(e) => handleStripeKeyChange('publishableKey', e.target.value)}
-                            className="mt-1 w-full"
-                         />
-                     </div>
-                     <div>
-                         <label htmlFor="stripeSecretKey" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Secret Key</label>
-                         <Input
-                            id="stripeSecretKey"
-                            type="password"
-                            placeholder="sk_test_..."
-                            value={paymentSettings.stripe?.secretKey || ''}
-                            onChange={(e) => handleStripeKeyChange('secretKey', e.target.value)}
-                            className="mt-1 w-full"
-                         />
-                     </div>
-                 </div>
-              )}
-              {/* Add sections for other gateways similarly */}
-
-            </>
+      <Card title="Behaviour & Flow" className="bg-white">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4">
+          {extraNumberFields.slice(0,2).map(f=> (
+            <Input key={f.id} label={f.label} type="number" value={(config.extra||{})[f.id]||''} onChange={e=>updateField(`extra.${f.id}`,e.target.value?parseInt(e.target.value):'')} />
+          ))}
+          {extraTextFields.filter(f=>['currency','callbackUrl','webhookUrl','orderPrefix'].includes(f.id)).map(f=> (
+            <Input key={f.id} label={f.label} value={(config.extra||{})[f.id]||''} onChange={e=>updateField(`extra.${f.id}`,e.target.value)} />
+          ))}
+          <Select multiple label="Offline Methods Allowed" options={offlineOptions} value={(config.extra?.offlineMethodsAllowed)||[]} onChange={val=>updateField('extra.offlineMethodsAllowed',val)} />
+          {categories.length>0 && (
+            <Select
+              multiple
+              label="Categories REQUIRING Payment"
+              options={categories.map(c=>({value:c._id||c.id,label:c.name}))}
+              value={config.extra?.paymentRequiredCategories||[]}
+              onChange={val=>updateField('extra.paymentRequiredCategories',val)}
+            />
           )}
         </div>
       </Card>
 
-      {paymentSettings.enabled && (
-        <Card title="Category Pricing" className="bg-white dark:bg-gray-800">
-          <div className="space-y-4 p-4">
-            {(paymentSettings.categoryPricing || []).map((item, index) => (
-              <div key={index} className="flex items-center justify-between border-b pb-2 mb-2 last:border-b-0 last:pb-0 last:mb-0">
-                <span className="text-gray-700 dark:text-gray-300">{item.category}</span>
-                <div className='flex items-center space-x-2'>
-                    <span className='text-gray-500 dark:text-gray-400'>{paymentSettings.currency || 'USD'}</span>
-                    <Input
-                        type="number"
-                        min="0"
-                        step="0.01" // Allow cents
-                        placeholder="e.g., 499.00"
-                        value={item.price === 0 ? '' : (item.price / 100).toFixed(2)} // Assume price is in cents
-                        onChange={(e) => handlePriceChange(item.category, e.target.value === '' ? 'free' : Math.round(parseFloat(e.target.value || 0) * 100))} // Convert back to cents
-                        className="w-32 text-right"
-                        disabled={item.category === 'Speaker'} // Example: Disable price change for speakers
-                    />
-                    {item.price === 0 && <span className="text-green-600 dark:text-green-400">(Free)</span>}
-                 </div>
-              </div>
-            ))}
+      <Card title="Partial / Deposits" className="bg-white">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4">
+          <Switch label="Allow Partial Payments" checked={!!(config.extra||{}).partialPaymentAllowed} onChange={v=>updateField('extra.partialPaymentAllowed',v)} />
+          <Input label="Minimum %" type="number" value={(config.extra||{}).minimumPercentage||''} onChange={e=>updateField('extra.minimumPercentage',e.target.value?parseFloat(e.target.value):'')} />
+        </div>
+      </Card>
+
+      <Card title="Reporting & Finance" className="bg-white">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4">
+          {extraNumberFields.filter(f=>['gstPercentage','vatPercentage','convenienceFeePercentage','fixedFee'].includes(f.id)).map(f=> (
+            <Input key={f.id} label={f.label} type="number" value={(config.extra||{})[f.id]||''} onChange={e=>updateField(`extra.${f.id}`,e.target.value?parseFloat(e.target.value):'')} />
+          ))}
+          <Switch label="Auto-generate Invoice" checked={!!(config.extra||{}).autoInvoice} onChange={v=>updateField('extra.autoInvoice',v)} />
+        </div>
+      </Card>
+
+      <Card title="Advanced" className="bg-white">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4">
+          {extraTextFields.filter(f=>['themeColor','statementDescriptor'].includes(f.id)).map(f=> (
+            <Input key={f.id} label={f.label} value={(config.extra||{})[f.id]||''} onChange={e=>updateField(`extra.${f.id}`,e.target.value)} />
+          ))}
+          <Input label="Retry Limit" type="number" value={(config.extra||{}).retryLimit||''} onChange={e=>updateField('extra.retryLimit',e.target.value?parseInt(e.target.value):'')} />
+          <Input label="Invoice Header" value={(config.extra||{}).invoiceHeader||''} onChange={e=>updateField('extra.invoiceHeader', e.target.value)} />
+          <Input label="Invoice Footer" value={(config.extra||{}).invoiceFooter||''} onChange={e=>updateField('extra.invoiceFooter', e.target.value)} />
+          <Input label="Invoice Email Subject" value={(config.extra||{}).invoiceEmailSubject||''} onChange={e=>updateField('extra.invoiceEmailSubject', e.target.value)} />
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium mb-1">Invoice Email Body (HTML)</label>
+            <textarea className="w-full border rounded p-2 h-32 text-sm font-mono" value={(config.extra||{}).invoiceEmailBody||''} onChange={e=>updateField('extra.invoiceEmailBody', e.target.value)} />
           </div>
-        </Card>
-      )}
+        </div>
+      </Card>
+
+      <Card title="Accompanying Person Pricing">
+        <div className="space-y-4">
+          <Input
+            type="number"
+            label="Accompanying Person Fee (in your event currency, per person)"
+            value={event?.accompanyingPersonSettings?.feeCents ? event.accompanyingPersonSettings.feeCents / 100 : 0}
+            min={0}
+            onChange={e => {
+              const value = Math.round((parseFloat(e.target.value) || 0) * 100);
+              setEvent({
+                ...event,
+                accompanyingPersonSettings: {
+                  ...event.accompanyingPersonSettings,
+                  feeCents: value
+                }
+              });
+              setDirty(true);
+            }}
+            step="0.01"
+            helperText="This fee will be charged for each accompanying person added to a registration."
+          />
+        </div>
+      </Card>
+
+      <div className="text-right py-4">
+        <Button onClick={save} disabled={saving || !dirty}>{saving?'Saving…':'Save Changes'}</Button>
+      </div>
     </div>
   );
 };

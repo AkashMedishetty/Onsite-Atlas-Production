@@ -10,7 +10,7 @@ import {
   Title,
   Tooltip,
   Legend,
-} from 'chart.js';
+} from 'chart';
 import { Line, Bar, Pie, Doughnut } from 'react-chartjs-2';
 
 // Register ChartJS components

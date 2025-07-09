@@ -1,14 +1,14 @@
 const express = require('express');
 const landingPageController = require('../controllers/landingPageController');
-const authController = require('../middleware/auth.middleware');
+const { protect, restrict } = require('../middleware/auth.middleware');
 
 const router = express.Router();
 
 // Protect all routes after this middleware
-router.use(authController.protect);
+router.use(protect);
 
 // Restrict to admin and organizer
-router.use(authController.restrict('admin', 'organizer'));
+router.use(restrict('admin', 'organizer'));
 
 router
   .route('/')

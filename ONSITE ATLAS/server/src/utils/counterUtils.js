@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
-const Registration = require('../models/Registration'); // Import Registration model
+const Registration = require('../models/Registration');
+const logger = require('../utils/logger'); // Import Registration model
 
 // Define the Counter Schema
 const counterSchema = new mongoose.Schema({
@@ -76,7 +77,7 @@ const getNextSequenceValue = async (sequenceName, startNumber = 1) => {
       if (aggregationResult.length > 0 && typeof aggregationResult[0].numericPart === 'number') {
         highestExistingNumber = aggregationResult[0].numericPart;
       }
-      console.log(
+      logger.info(
         `[Agg] Highest existing registration ID number found for ${prefix} (event ${eventId}): ${highestExistingNumber}. Effective startNumber: ${effectiveStartNumber}`
       );
     }
@@ -84,15 +85,15 @@ const getNextSequenceValue = async (sequenceName, startNumber = 1) => {
     const correctBaseValue = Math.max(highestExistingNumber, effectiveStartNumber - 1);
     
     if (counter.sequence_value < correctBaseValue) {
-       console.log(`Counter ${sequenceName} value (${counter.sequence_value}) is lower than correct base (${correctBaseValue}). Updating...`);
+       logger.info(`Counter ${sequenceName} value (${counter.sequence_value}) is lower than correct base (${correctBaseValue}). Updating...`);
        counter = await Counter.findByIdAndUpdate(
            sequenceName,
            { $set: { sequence_value: correctBaseValue } },
            { new: true }
        );
-       console.log(`Counter ${sequenceName} updated to ${counter.sequence_value}.`);
+       logger.info(`Counter ${sequenceName} updated to ${counter.sequence_value}.`);
     } else {
-        console.log(`Counter ${sequenceName} value (${counter.sequence_value}) is already >= correct base (${correctBaseValue}). No update needed before increment.`);
+        logger.info(`Counter ${sequenceName} value (${counter.sequence_value}) is already >= correct base (${correctBaseValue}). No update needed before increment.`);
     }
 
     const updatedCounter = await Counter.findByIdAndUpdate(
@@ -105,11 +106,11 @@ const getNextSequenceValue = async (sequenceName, startNumber = 1) => {
        throw new Error(`Counter ${sequenceName} not found after increment attempt.`);
     }
 
-    console.log(`Returning next sequence value for ${sequenceName}: ${updatedCounter.sequence_value}`);
+    logger.info(`Returning next sequence value for ${sequenceName}: ${updatedCounter.sequence_value}`);
     return updatedCounter.sequence_value;
 
   } catch (error) {
-    console.error(`Error getting next sequence value for ${sequenceName}:`, error);
+    logger.error(`Error getting next sequence value for ${sequenceName}:`, error);
     throw new Error('Failed to generate sequence number.');
   }
 };
@@ -169,19 +170,19 @@ const getNextSequenceBlock = async (sequenceName, count, startNumber = 1) => {
     if (aggregationResult.length > 0 && typeof aggregationResult[0].numericPart === 'number') {
       highestExistingNumber = aggregationResult[0].numericPart;
     }
-    console.log(`[Block][Agg] Highest existing ID number for ${prefix} (event ${eventId}): ${highestExistingNumber}. Effective startNumber: ${effectiveStartNumber}`);
+    logger.info(`[Block][Agg] Highest existing ID number for ${prefix} (event ${eventId}): ${highestExistingNumber}. Effective startNumber: ${effectiveStartNumber}`);
     
     const correctBaseValue = Math.max(highestExistingNumber, effectiveStartNumber - 1);
     if (counter.sequence_value < correctBaseValue) {
-       console.log(`[Block] Counter ${sequenceName} value (${counter.sequence_value}) is lower than correct base (${correctBaseValue}). Updating...`);
+       logger.info(`[Block] Counter ${sequenceName} value (${counter.sequence_value}) is lower than correct base (${correctBaseValue}). Updating...`);
        counter = await Counter.findByIdAndUpdate(
            sequenceName,
            { $set: { sequence_value: correctBaseValue } },
            { new: true }
        );
-       console.log(`[Block] Counter ${sequenceName} updated to ${counter.sequence_value}.`);
+       logger.info(`[Block] Counter ${sequenceName} updated to ${counter.sequence_value}.`);
     } else {
-        console.log(`[Block] Counter ${sequenceName} value (${counter.sequence_value}) is already >= correct base (${correctBaseValue}). No update needed before increment.`);
+        logger.info(`[Block] Counter ${sequenceName} value (${counter.sequence_value}) is already >= correct base (${correctBaseValue}). No update needed before increment.`);
     }
 
     const reservationAttemptTime = Date.now();
@@ -195,16 +196,16 @@ const getNextSequenceBlock = async (sequenceName, count, startNumber = 1) => {
 
     if (!counterBeforeInc) {
        // This could happen if the document was deleted or if write concern failed.
-       console.error(`[Block] CRITICAL: Counter ${sequenceName} not found or write concern failed during block increment attempt at ${reservationAttemptTime}.`);
+       logger.error(`[Block] CRITICAL: Counter ${sequenceName} not found or write concern failed during block increment attempt at ${reservationAttemptTime}.`);
        throw new Error(`Counter ${sequenceName} state uncertain during block increment.`);
     }
     
     const startingSequenceValue = counterBeforeInc.sequence_value + 1;
-    console.log(`[Block] Reserved block for ${sequenceName} starting at ${startingSequenceValue} (Count: ${count}). Original counter val: ${counterBeforeInc.sequence_value}`);
+    logger.info(`[Block] Reserved block for ${sequenceName} starting at ${startingSequenceValue} (Count: ${count}). Original counter val: ${counterBeforeInc.sequence_value}`);
     return startingSequenceValue;
 
   } catch (error) {
-    console.error(`[Block] Error getting next sequence block for ${sequenceName}:`, error);
+    logger.error(`[Block] Error getting next sequence block for ${sequenceName}:`, error);
     throw new Error('Failed to generate sequence block.');
   }
 };

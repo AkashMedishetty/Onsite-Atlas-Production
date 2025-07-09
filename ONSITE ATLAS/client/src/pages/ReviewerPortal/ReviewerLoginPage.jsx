@@ -28,17 +28,19 @@ const ReviewerLoginPage = () => {
     setError(''); // Clear previous errors before attempting login
     setLoading(true);
     try {
-      // Attempt to log in using the existing login function
-      // This function should ideally return user info including roles
-      const userData = await login(email, password, eventId);
+      // Attempt to log in using the existing login function with reviewer context
+      // This tells AuthContext that this is a reviewer portal login
+      const userData = await login(email, password, eventId, 'reviewer');
+      
       // Set eventId in localStorage for context (redundant but safe)
       localStorage.setItem('currentEventId', eventId);
+      
       // IMPORTANT: Add a check here to ensure the logged-in user has a 'reviewer' or 'admin' role
       // This is a client-side check; the backend will enforce API access.
       if (userData && (userData.role === 'reviewer' || userData.role === 'admin')) {
         toast.success('Login successful!');
-        // Set eventId in context if needed (handled by AuthContext, but double-check)
-        navigate('/reviewer/dashboard'); 
+        // AuthContext will handle the redirect to /reviewer/dashboard automatically
+        // No need to manually navigate since AuthContext redirects after successful login
       } else {
         // If login is successful but user is not a reviewer/admin, prevent access to reviewer portal
         setError('Access denied. Reviewer or admin credentials required.');

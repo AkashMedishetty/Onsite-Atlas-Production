@@ -55,6 +55,9 @@ const RegistrationForm = ({ isOnsite = false }) => {
   
   const [formData, setFormData] = useState(initialFormData);
   
+  // Add state for accompanying persons
+  const [accompanyingPersons, setAccompanyingPersons] = useState([]);
+  
   // Load event, categories and form configuration
   useEffect(() => {
     const fetchEventData = async () => {
@@ -173,6 +176,33 @@ const RegistrationForm = ({ isOnsite = false }) => {
     return errors;
   };
   
+  // Helper to get accompanying person fields from event
+  const getAccompanyingPersonFields = () => {
+    return event?.registrationSettings?.accompanyingPersonFields || [];
+  };
+
+  // Handler to add a new accompanying person
+  const handleAddAccompanyingPerson = () => {
+    const max = event?.accompanyingPersonSettings?.maxAllowed || 0;
+    if (accompanyingPersons.length >= max) return;
+    setAccompanyingPersons([...accompanyingPersons, { firstName: '', lastName: '', customFields: {} }]);
+  };
+
+  // Handler to remove an accompanying person
+  const handleRemoveAccompanyingPerson = (idx) => {
+    setAccompanyingPersons(accompanyingPersons.filter((_, i) => i !== idx));
+  };
+
+  // Handler to update an accompanying person's field
+  const handleAccompanyingPersonChange = (idx, field, value) => {
+    setAccompanyingPersons(persons => persons.map((p, i) => i === idx ? { ...p, [field]: value } : p));
+  };
+
+  // Handler to update an accompanying person's custom field
+  const handleAccompanyingCustomFieldChange = (idx, field, value) => {
+    setAccompanyingPersons(persons => persons.map((p, i) => i === idx ? { ...p, customFields: { ...p.customFields, [field]: value } } : p));
+  };
+  
   // Form submission handler
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -242,6 +272,7 @@ const RegistrationForm = ({ isOnsite = false }) => {
         customFields,
         // No need to send prefix information - the backend will use the proper idGenerator utility
         // that gets the prefix directly from the event document in the database
+        accompanyingPersons: accompanyingPersons
       };
       
       console.log("Sending registration data:", registrationData);
@@ -253,6 +284,7 @@ const RegistrationForm = ({ isOnsite = false }) => {
       if (response.success) {
         setSuccessMessage(`Registration created successfully! ID: ${response.data?.registrationId || ''}`);
         setFormData({...initialFormData});
+        setAccompanyingPersons([]);
         
         // Redirect to registrations list after success, signaling a refresh
         setTimeout(() => {
@@ -499,6 +531,93 @@ const RegistrationForm = ({ isOnsite = false }) => {
                 </div>
               </div>
             </div>
+            
+            {/* Accompanying Persons Section */}
+            {event?.accompanyingPersonSettings?.maxAllowed > 0 && (
+              <div className="card mb-6 border border-gray-200 rounded-lg overflow-hidden">
+                <div className="card-header p-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+                  <h3 className="text-lg font-semibold">Accompanying Persons</h3>
+                  <button
+                    type="button"
+                    className="btn btn-outline-primary"
+                    onClick={handleAddAccompanyingPerson}
+                    disabled={accompanyingPersons.length >= (event.accompanyingPersonSettings.maxAllowed || 0)}
+                  >
+                    Add Accompanying Person
+                  </button>
+                </div>
+                <div className="card-body p-5 space-y-6">
+                  {accompanyingPersons.length === 0 && <div className="text-gray-500">No accompanying persons added.</div>}
+                  {accompanyingPersons.map((person, idx) => (
+                    <div key={idx} className="border rounded-lg p-4 mb-2 relative bg-gray-50">
+                      <button
+                        type="button"
+                        className="absolute top-2 right-2 text-red-500 hover:text-red-700"
+                        onClick={() => handleRemoveAccompanyingPerson(idx)}
+                        aria-label="Remove accompanying person"
+                      >
+                        &times;
+                      </button>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">First Name</label>
+                          <input
+                            type="text"
+                            className="form-control block w-full rounded-md border-gray-300"
+                            value={person.firstName || ''}
+                            onChange={e => handleAccompanyingPersonChange(idx, 'firstName', e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Last Name</label>
+                          <input
+                            type="text"
+                            className="form-control block w-full rounded-md border-gray-300"
+                            value={person.lastName || ''}
+                            onChange={e => handleAccompanyingPersonChange(idx, 'lastName', e.target.value)}
+                          />
+                        </div>
+                        {/* Render dynamic custom fields */}
+                        {getAccompanyingPersonFields().map(field => (
+                          <div key={field.name} className="col-span-1">
+                            <label className="block text-sm font-medium text-gray-700">{field.label}{field.isRequired && <span className="text-red-500 ml-1">*</span>}</label>
+                            {field.type === 'select' ? (
+                              <select
+                                className="form-select block w-full rounded-md border-gray-300"
+                                value={person.customFields?.[field.name] || ''}
+                                onChange={e => handleAccompanyingCustomFieldChange(idx, field.name, e.target.value)}
+                                required={field.isRequired}
+                              >
+                                <option value="">Select</option>
+                                {field.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                              </select>
+                            ) : field.type === 'checkbox' ? (
+                              <input
+                                type="checkbox"
+                                className="form-checkbox"
+                                checked={!!person.customFields?.[field.name]}
+                                onChange={e => handleAccompanyingCustomFieldChange(idx, field.name, e.target.checked)}
+                                required={field.isRequired}
+                              />
+                            ) : (
+                              <input
+                                type={field.type || 'text'}
+                                className="form-control block w-full rounded-md border-gray-300"
+                                value={person.customFields?.[field.name] || ''}
+                                onChange={e => handleAccompanyingCustomFieldChange(idx, field.name, e.target.value)}
+                                required={field.isRequired}
+                                placeholder={field.placeholder || ''}
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             
             {/* Form actions */}
             <div className="form-actions flex justify-end">

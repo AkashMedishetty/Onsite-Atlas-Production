@@ -27,6 +27,7 @@ const Pagination = ({
   pageSize = 10,
   onPageSizeChange,
   disableRipple = false,
+  totalCount, // Extract totalCount to prevent passing to DOM
   ...props
 }) => {
   // Log the received totalPages prop

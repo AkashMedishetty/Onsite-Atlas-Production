@@ -8,6 +8,8 @@ const { buildFileUrl } = require('../config/paths');
 router.post('/recipients', protect, emailController.getFilteredRecipients);
 router.get('/history', protect, emailController.getEmailHistory);
 router.get('/history-debug', protect, emailController.getEmailHistoryDebug);
+router.get('/history-enhanced', protect, emailController.getEnhancedEmailHistory);
+router.get('/:emailId/failures', protect, emailController.getEmailFailureReport);
 
 router.post('/test-smtp', protect, emailController.testSmtpConfiguration);
 
@@ -23,5 +25,6 @@ router.get('/templates', protect, restrict('admin','staff'), emailController.get
 router.put('/templates/:templateKey', protect, restrict('admin','staff'), emailController.updateTemplate);
 router.post('/preview', protect, restrict('admin','staff'), emailController.previewRecipients);
 router.post('/send', protect, restrict('admin','staff'), emailController.sendCustomEmail);
+router.post('/bulk-send', protect, restrict('admin','staff'), emailController.sendBulkEmail);
 
 module.exports = router; 
