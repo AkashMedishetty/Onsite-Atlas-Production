@@ -58,7 +58,7 @@ export const ParticipantLogin: React.FC<ParticipantLoginProps> = ({
               <div className="absolute -top-1 -right-1 w-3 h-3 bg-purple-400 animate-ping"></div>
             </div>
             
-            <h1 className="text-5xl sm:text-6xl font-black text-white mb-6 font-mono tracking-tight">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-black text-white mb-6 font-mono tracking-tight">
               JOIN QUIZ
             </h1>
             

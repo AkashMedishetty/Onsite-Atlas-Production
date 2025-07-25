@@ -381,7 +381,7 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
               <Users className="w-12 h-12 text-cyan-400 relative z-10" />
             </div>
             
-            <h1 className="text-4xl sm:text-6xl font-black text-white mb-6 font-mono tracking-tight">
+            <h1 className="text-3xl sm:text-4xl md:text-6xl font-black text-white mb-6 font-mono tracking-tight">
               STANDBY MODE
             </h1>
             
