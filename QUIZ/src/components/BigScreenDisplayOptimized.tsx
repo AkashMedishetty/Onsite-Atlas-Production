@@ -28,6 +28,8 @@ interface AnswerStats {
 }
 
 export const BigScreenDisplayOptimized: React.FC<BigScreenDisplayOptimizedProps> = ({ accessCode }) => {
+  console.log('🖥️ [BIG SCREEN] Component mounted with accessCode:', accessCode);
+  
   const [sessionId, setSessionId] = useState<string>('');
   const [quizState, setQuizState] = useState<QuizState>({
     isActive: false,

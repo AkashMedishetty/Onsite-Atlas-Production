@@ -396,6 +396,7 @@ export const useOptimizedSupabaseQuiz = (sessionId: string): UseOptimizedSupabas
     try {
       setLoadingDebounced(true);
       setError(null);
+      console.log('[QUIZ] Making quiz live...');
 
       const { error } = await supabase
         .from('quiz_sessions')
@@ -403,6 +404,34 @@ export const useOptimizedSupabaseQuiz = (sessionId: string): UseOptimizedSupabas
         .eq('id', sessionId);
 
       if (error) throw error;
+
+      console.log('✅ [QUIZ] Quiz is now live');
+      
+      // Clear cache to force refresh
+      quizDataCache.delete(sessionId);
+      
+      // Update state immediately
+      const currentState = quizState;
+      if (currentState) {
+        const newState = {
+          ...currentState,
+          isActive: true,
+        };
+        setQuizState(newState);
+        
+        // Update cache with new state
+        quizDataCache.set(sessionId, { data: newState, timestamp: Date.now(), ttl: DEFAULT_CACHE_TTL });
+      }
+      
+      // Trigger real-time update by updating the database timestamp
+      await supabase
+        .from('quiz_sessions')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', sessionId);
+      
+      // Also reload data to ensure consistency
+      await loadQuizData(false);
+      
     } catch (err) {
       console.error('[QUIZ] Error making quiz live:', err);
       setError(err instanceof Error ? err.message : 'Failed to make quiz live');
@@ -410,7 +439,7 @@ export const useOptimizedSupabaseQuiz = (sessionId: string): UseOptimizedSupabas
     } finally {
       setLoadingDebounced(false);
     }
-  }, [shouldSkip, sessionId, setLoadingDebounced]);
+  }, [shouldSkip, sessionId, setLoadingDebounced, quizState, setQuizState, loadQuizData]);
 
   const startQuiz = useCallback(async () => {
     if (shouldSkip) return;

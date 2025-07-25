@@ -136,12 +136,16 @@ function App() {
     // Check for big screen routing first - FIXED to handle both patterns
     if (path.startsWith('/big-screen/')) {
       const accessCode = path.split('/big-screen/')[1];
-      console.log('🎮 [APP] Big screen code detected:', accessCode);
-      if (accessCode) {
+      console.log('🎮 [APP] Big screen code detected from path:', accessCode);
+      console.log('🎮 [APP] Full path was:', path);
+      if (accessCode && accessCode.trim()) {
+        console.log('✅ [APP] Setting big screen state with code:', accessCode);
         setAppState({ type: 'big-screen', accessCode });
         setIsInitialized(true);
         sessionStorage.removeItem('app_initializing');
         return;
+      } else {
+        console.error('❌ [APP] Big screen path found but no valid access code');
       }
     }
     
