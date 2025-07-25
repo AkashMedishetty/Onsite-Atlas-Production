@@ -54,7 +54,7 @@ export const BigScreenDisplayOptimized: React.FC<BigScreenDisplayOptimizedProps>
   // Calculate top 3 participants
   const top3Participants = useMemo(() => {
     return participants
-      .filter(p => p.score > 0)
+      .filter(p => p.score >= 0) // Show all participants, even with 0 score
       .sort((a, b) => b.score - a.score)
       .slice(0, 3);
   }, [participants]);
@@ -440,7 +440,7 @@ export const BigScreenDisplayOptimized: React.FC<BigScreenDisplayOptimizedProps>
                    '🔴 LIVE QUIZ'}
                 </div>
                 <div className="text-white/70">
-                  Question {Math.max(1, quizState.currentQuestionIndex + 1)} of {totalQuestions}
+                  Question {Math.max(1, Math.min(quizState.currentQuestionIndex + 1, totalQuestions))} of {totalQuestions}
                 </div>
                 <div className="text-white/70">
                   {participants.length} Participants
@@ -454,11 +454,11 @@ export const BigScreenDisplayOptimized: React.FC<BigScreenDisplayOptimizedProps>
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center gap-4">
                     <div className="w-16 h-16 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full flex items-center justify-center font-mono font-black text-xl text-black">
-                      Q{quizState.currentQuestionIndex + 1}
+                      Q{Math.max(1, Math.min(quizState.currentQuestionIndex + 1, totalQuestions))}
                     </div>
                     <div>
                       <div className="text-cyan-400 font-mono font-bold text-xl">
-                        QUESTION {quizState.currentQuestionIndex + 1}
+                        QUESTION {Math.max(1, Math.min(quizState.currentQuestionIndex + 1, totalQuestions))}
                       </div>
                       <div className="text-white/70 font-mono">
                         {currentQuestion.points} points • {currentQuestion.timeLimit}s

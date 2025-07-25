@@ -149,8 +149,20 @@ function App() {
       }
     }
     
-    // Check URL parameters for access code (for ?code= pattern)
+    // Check URL parameters
     const urlParams = new URLSearchParams(search);
+    
+    // Check for participant join with access code
+    const participantCode = urlParams.get('participant');
+    if (participantCode) {
+      console.log('👥 [APP] Participant join code detected:', participantCode);
+      setAppState({ type: 'participant-login', directSessionId: participantCode });
+      setIsInitialized(true);
+      sessionStorage.removeItem('app_initializing');
+      return;
+    }
+    
+    // Check for big screen access code (for ?code= pattern)
     const accessCodeParam = urlParams.get('code');
     if (accessCodeParam) {
       console.log('🎮 [APP] Big screen code detected in params:', accessCodeParam);

@@ -349,6 +349,15 @@ export const useOptimizedSupabaseQuiz = (sessionId: string): UseOptimizedSupabas
       setLoadingDebounced(true);
       setError(null);
 
+      // Bounds checking to prevent invalid question indices
+      const totalQuestions = quizState?.questions?.length || 0;
+      if (index < 0 || index >= totalQuestions) {
+        console.warn(`[QUIZ] Invalid question index ${index}. Total questions: ${totalQuestions}`);
+        throw new Error(`Invalid question index ${index}. Total questions: ${totalQuestions}`);
+      }
+
+      console.log(`[QUIZ] Starting question ${index + 1} of ${totalQuestions}`);
+
       const { error } = await supabase
         .from('quiz_sessions')
         .update({
@@ -366,7 +375,7 @@ export const useOptimizedSupabaseQuiz = (sessionId: string): UseOptimizedSupabas
     } finally {
       setLoadingDebounced(false);
     }
-  }, [shouldSkip, sessionId, setLoadingDebounced]);
+  }, [shouldSkip, sessionId, setLoadingDebounced, quizState?.questions?.length]);
 
   const showResults = useCallback(async () => {
     if (shouldSkip) return;

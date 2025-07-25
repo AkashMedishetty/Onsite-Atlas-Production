@@ -240,7 +240,7 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
   const handleShareLink = () => {
     const currentAccessCode = (quizState as any).accessCode || displayCode;
     const participantLink = currentAccessCode 
-      ? `${window.location.origin}?code=${currentAccessCode}` 
+      ? `${window.location.origin}?participant=${currentAccessCode}` 
       : `${window.location.origin}?join=${sessionId}`;
     
     navigator.clipboard.writeText(participantLink).then(() => {
@@ -703,14 +703,34 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
               isFinished={quizState.isFinished}
               currentQuestionIndex={quizState.currentQuestionIndex}
               totalQuestions={quizState.questions.length}
-              onStartQuiz={startQuiz}
-              onShowResults={showResults}
+              currentQuestion={quizState.questions[quizState.currentQuestionIndex] || undefined}
+              timeRemaining={null}
+              answeredCount={Object.keys(quizState.participants.reduce((acc, p) => ({ ...acc, ...p.answers }), {})).length}
+              totalParticipants={quizState.participants.length}
+              showResults={quizState.showResults}
               loading={loading}
+              onMakeLive={makeLive}
+              onStartQuiz={startQuiz}
+              onNextQuestion={async () => {
+                const nextIndex = quizState.currentQuestionIndex + 1;
+                console.log('🔄 [HOST] Next question requested - Current:', quizState.currentQuestionIndex, 'Next:', nextIndex, 'Total:', quizState.questions.length);
+                if (nextIndex < quizState.questions.length) {
+                  console.log('✅ [HOST] Starting question', nextIndex + 1);
+                  await startQuestion(nextIndex);
+                } else {
+                  console.log('🏁 [HOST] Quiz finished - calling finishQuiz');
+                  await finishQuiz();
+                }
+              }}
+              onShowResults={showResults}
             />
 
             <LiveLeaderboard
               participants={quizState.participants}
-              onExportResults={handleQuickExport}
+              totalQuestions={quizState.questions.length}
+              averageScore={quizState.statistics.averageScore}
+              participationRate={quizState.statistics.participationRate}
+              loading={loading}
             />
           </div>
         </div>
