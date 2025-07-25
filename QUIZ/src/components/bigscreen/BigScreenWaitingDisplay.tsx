@@ -55,7 +55,7 @@ export const BigScreenWaitingDisplay: React.FC<BigScreenWaitingDisplayProps> = (
         {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-6xl sm:text-8xl font-black text-white mb-6 font-mono tracking-tight">
-            PURPLEHAT EVENTS
+            QUIZ PLATFORM
           </h1>
           <div className="text-3xl sm:text-4xl text-cyan-400 font-mono font-bold tracking-wider mb-4">
             INTERACTIVE QUIZ PLATFORM

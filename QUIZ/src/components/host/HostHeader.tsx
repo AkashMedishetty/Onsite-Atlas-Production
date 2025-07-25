@@ -85,7 +85,7 @@ export const HostHeader: React.FC<HostHeaderProps> = ({
       {/* Left Side - Quiz Info */}
       <div>
         <h1 className="text-3xl sm:text-4xl font-black text-white mb-2 font-mono tracking-tight">
-          PURPLEHAT EVENTS - HOST DASHBOARD
+          HOST DASHBOARD
         </h1>
         
         {/* Quiz Title */}

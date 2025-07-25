@@ -731,7 +731,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
       <div className="max-w-7xl mx-auto">
         <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 sm:mb-8 gap-4">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-black text-white mb-2 font-mono tracking-tight">PURPLEHAT EVENTS - HOST DASHBOARD</h1>
+            <h1 className="text-3xl sm:text-4xl font-black text-white mb-2 font-mono tracking-tight">HOST DASHBOARD</h1>
             <div className="flex items-center gap-2 mb-2">
               {editingQuizName ? (
                 <div className="flex items-center gap-2">

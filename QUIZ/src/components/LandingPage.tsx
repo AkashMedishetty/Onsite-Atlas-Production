@@ -46,8 +46,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectRole }) => {
             </div>
             
             <h1 className="text-5xl sm:text-6xl lg:text-8xl font-black text-white mb-6 lg:mb-8 tracking-tight">
-              PURPLEHAT
-              <span className="block text-cyan-400 text-4xl sm:text-5xl lg:text-7xl mt-2">EVENTS</span>
+              QUIZ
+              <span className="block text-cyan-400 text-4xl sm:text-5xl lg:text-7xl mt-2">PLATFORM</span>
             </h1>
             
             <div className="inline-flex items-center gap-3 bg-black border border-cyan-400/30 px-6 py-3 mb-8">
@@ -235,7 +235,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectRole }) => {
           <div className="text-center">
             <div className="inline-flex items-center gap-4 bg-black border border-green-400 px-8 lg:px-12 py-4 lg:py-6">
               <div className="w-4 h-4 bg-green-400 animate-pulse"></div>
-              <span className="text-green-400 font-black text-lg lg:text-xl font-mono tracking-wider">PURPLEHAT EVENTS PLATFORM READY</span>
+              <span className="text-green-400 font-black text-lg lg:text-xl font-mono tracking-wider">PLATFORM READY</span>
               <div className="w-4 h-4 bg-cyan-400 animate-pulse delay-500"></div>
             </div>
             <p className="text-gray-400 text-sm mt-6 max-w-md mx-auto font-mono">
