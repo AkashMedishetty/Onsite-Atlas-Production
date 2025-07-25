@@ -116,7 +116,7 @@ export const BigScreenDisplayOptimized: React.FC<BigScreenDisplayOptimizedProps>
       if (session.current_question_index >= 0) {
         const { data: question, error: questionError } = await supabase
           .from('quiz_questions')
-          .select('id, question, options, correct_answer, time_limit, points, image_url, option_images, order_index')
+          .select('id, question, options, correct_answer, time_limit, points, image_url, order_index')
           .eq('quiz_session_id', sessionId)
           .eq('order_index', session.current_question_index)
           .single();
@@ -132,7 +132,7 @@ export const BigScreenDisplayOptimized: React.FC<BigScreenDisplayOptimizedProps>
             difficulty: 'medium',
             orderIndex: question.order_index,
             imageUrl: question.image_url || undefined,
-            optionImages: question.option_images || undefined,
+            optionImages: undefined,
           };
           
           setCurrentQuestion(processedQuestion);

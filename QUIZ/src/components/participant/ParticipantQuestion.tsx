@@ -30,6 +30,7 @@ interface ParticipantQuestionProps {
   hasAnswered: boolean;
   myParticipant: Participant;
   loading: boolean;
+  showResults: boolean;
   onSelectAnswer: (answerIndex: number) => Promise<void>;
 }
 
@@ -42,6 +43,7 @@ export const ParticipantQuestion: React.FC<ParticipantQuestionProps> = ({
   hasAnswered,
   myParticipant,
   loading,
+  showResults,
   onSelectAnswer,
 }) => {
   return (
@@ -152,7 +154,7 @@ export const ParticipantQuestion: React.FC<ParticipantQuestionProps> = ({
                     </div>
                     
                     {/* Answer Status Icons */}
-                    {hasAnswered && (
+                    {hasAnswered && showResults && (
                       <div className="ml-4">
                         {selectedAnswer === index && index === question.correctAnswer && (
                           <CheckCircle className="w-6 h-6 text-green-400" />
@@ -165,17 +167,22 @@ export const ParticipantQuestion: React.FC<ParticipantQuestionProps> = ({
                         )}
                       </div>
                     )}
+                    {hasAnswered && !showResults && selectedAnswer === index && (
+                      <div className="ml-4">
+                        <Clock className="w-6 h-6 text-cyan-400" />
+                      </div>
+                    )}
                   </div>
                 </button>
               ))}
             </div>
             
             {/* Answer Status Messages */}
-            {hasAnswered && (
+            {hasAnswered && !showResults && (
               <div className="mt-6 p-4 bg-black/50 border border-cyan-400/50 rounded-lg">
                 <div className="text-cyan-400 font-mono font-bold text-center flex items-center justify-center gap-2">
                   <CheckCircle className="w-5 h-5" />
-                  ANSWER SUBMITTED - WAITING FOR OTHER PARTICIPANTS
+                  ANSWER SUBMITTED - WAITING FOR RESULTS
                 </div>
               </div>
             )}

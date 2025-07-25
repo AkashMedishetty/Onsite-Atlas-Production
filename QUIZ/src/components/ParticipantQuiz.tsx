@@ -117,7 +117,7 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
       if (session.current_question_index >= 0) {
         const { data: question, error: questionError } = await supabase
           .from('quiz_questions')
-          .select('id, question, options, correct_answer, time_limit, points, image_url, option_images, order_index')
+          .select('id, question, options, correct_answer, time_limit, points, image_url, order_index')
           .eq('quiz_session_id', sessionId)
           .eq('order_index', session.current_question_index)
           .single();
@@ -621,7 +621,7 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
                     onClick={() => !hasAnswered && !loading && submitAnswer(index)}
                     disabled={hasAnswered || timeRemaining === 0 || loading}
                     className={`p-4 sm:p-6 text-left transition-all duration-300 font-mono font-bold text-lg border-2 ${
-                      hasAnswered
+                      hasAnswered && quizState.showResults
                         ? selectedAnswer === index
                           ? index === currentQuestion.correct_answer
                             ? 'bg-green-500/20 border-green-400 text-green-300'
@@ -629,6 +629,8 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
                           : index === currentQuestion.correct_answer
                           ? 'bg-green-500/20 border-green-400 text-green-300'
                           : 'bg-gray-800/50 border-gray-600 text-gray-400'
+                        : hasAnswered && selectedAnswer === index
+                        ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
                         : 'bg-black border-gray-600 text-white hover:border-cyan-400 hover:bg-cyan-400/10 cursor-pointer transform hover:scale-105'
                     } ${timeRemaining === 0 || loading ? 'cursor-not-allowed' : ''}`}
                   >
@@ -647,7 +649,7 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
                         )}
                         <span className="flex-1">{option}</span>
                       </div>
-                      {hasAnswered && (
+                      {hasAnswered && quizState.showResults && (
                         <div className="ml-4">
                           {selectedAnswer === index && index === currentQuestion.correct_answer && (
                             <CheckCircle className="w-6 h-6 text-green-400" />
@@ -660,15 +662,20 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
                           )}
                         </div>
                       )}
+                      {hasAnswered && !quizState.showResults && selectedAnswer === index && (
+                        <div className="ml-4">
+                          <Clock className="w-6 h-6 text-cyan-400" />
+                        </div>
+                      )}
                     </div>
                   </button>
                 ))}
               </div>
               
-              {hasAnswered && (
+              {hasAnswered && !quizState.showResults && (
                 <div className="mt-6 p-4 bg-black border border-cyan-400/50">
                   <div className="text-cyan-400 font-mono font-bold text-center">
-                    ANSWER SUBMITTED - WAITING FOR OTHER PARTICIPANTS
+                    ANSWER SUBMITTED - WAITING FOR RESULTS
                   </div>
                 </div>
               )}

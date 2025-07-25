@@ -517,7 +517,7 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
                       </div>
                       <h3 className="text-lg font-bold text-white mb-1">{participant.name}</h3>
                       <p className="text-sm text-gray-300 mb-1">{participant.mobile}</p>
-                      <p className="text-sm text-gray-400 mb-3">{(participant as any).institute || 'Institute not specified'}</p>
+                      <p className="text-sm text-gray-400 mb-3">{participant.institute || 'Institute not specified'}</p>
                       <div className={`text-2xl font-bold mb-2 ${
                         index === 0 ? 'text-yellow-400' : index === 1 ? 'text-gray-300' : 'text-orange-400'
                       }`}>
@@ -559,7 +559,7 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
                         </td>
                         <td className="py-3 px-4 text-white font-medium">{participant.name}</td>
                         <td className="py-3 px-4 text-gray-300">{participant.mobile}</td>
-                        <td className="py-3 px-4 text-gray-400">{(participant as any).institute || 'Not specified'}</td>
+                        <td className="py-3 px-4 text-gray-400">{participant.institute || 'Not specified'}</td>
                         <td className="py-3 px-4 text-right">
                           <span className="text-cyan-400 font-bold">{participant.score}</span>
                         </td>

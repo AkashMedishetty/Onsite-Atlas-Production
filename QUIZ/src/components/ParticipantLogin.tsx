@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Users, Zap, Shield, Wifi, Activity, Terminal, Lock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Users, Zap, Shield, Wifi, Activity, Terminal, Lock, RefreshCw } from 'lucide-react';
 
 interface ParticipantLoginProps {
   onJoin: (name: string, sessionId: string, mobile: string, institute: string) => Promise<void>;
@@ -18,6 +18,38 @@ export const ParticipantLogin: React.FC<ParticipantLoginProps> = ({
   const [institute, setInstitute] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isRejoining, setIsRejoining] = useState(false);
+
+  // Check if user has a previous session when component loads
+  useEffect(() => {
+    const savedSession = localStorage.getItem('quiz_participant_session');
+    if (savedSession) {
+      try {
+        const session = JSON.parse(savedSession);
+        if (session.participantName && session.participantMobile && session.accessCode) {
+          setName(session.participantName);
+          setMobile(session.participantMobile);
+          setSessionId(session.accessCode);
+          if (session.participantInstitute) {
+            setInstitute(session.participantInstitute);
+          }
+          setIsRejoining(true);
+        }
+      } catch (error) {
+        console.error('Error loading previous session:', error);
+      }
+    }
+  }, []);
+
+  const handleClearSession = () => {
+    localStorage.removeItem('quiz_participant_session');
+    setName('');
+    setMobile('');
+    setSessionId(directSessionId || '');
+    setInstitute('');
+    setIsRejoining(false);
+    setError('');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +64,14 @@ export const ParticipantLogin: React.FC<ParticipantLoginProps> = ({
     try {
       await onJoin(name.trim(), sessionId.trim(), mobile.trim(), institute.trim());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to join quiz. Please try again.');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to join quiz. Please try again.';
+      
+      // Provide helpful messaging for common errors
+      if (errorMessage.includes('already taken')) {
+        setError('This name is already used by another participant. If this is you trying to rejoin, please use the same mobile number and institute you used before, or try a different name.');
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -59,7 +98,7 @@ export const ParticipantLogin: React.FC<ParticipantLoginProps> = ({
             </div>
             
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-black text-white mb-6 font-mono tracking-tight">
-              JOIN QUIZ
+              {isRejoining ? 'CONTINUE QUIZ' : 'JOIN QUIZ'}
             </h1>
             
             <div className="inline-flex items-center gap-3 bg-black border border-cyan-400/30 px-6 py-3 mb-8">
@@ -69,9 +108,30 @@ export const ParticipantLogin: React.FC<ParticipantLoginProps> = ({
             </div>
             
             <p className="text-lg text-gray-300 font-mono">
-              Enter your details to join the quiz
+              {isRejoining ? 'Your previous session was found. Continue where you left off!' : 'Enter your details to join the quiz'}
             </p>
           </div>
+
+          {isRejoining && (
+            <div className="mb-6 p-4 bg-gradient-to-r from-cyan-900/20 to-purple-900/20 border border-cyan-400/30 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3 text-cyan-400">
+                  <RefreshCw className="w-5 h-5" />
+                  <span className="font-mono font-bold text-sm uppercase tracking-wider">Previous Session Found</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearSession}
+                  className="text-gray-400 hover:text-white font-mono text-xs uppercase tracking-wider border border-gray-600 hover:border-cyan-400 px-3 py-1 transition-all duration-300"
+                >
+                  Start Fresh
+                </button>
+              </div>
+              <p className="text-gray-300 font-mono text-sm mt-2">
+                You can rejoin using your previous details or start fresh with new information.
+              </p>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>

@@ -51,6 +51,7 @@ interface ParticipantSession {
   participantId: string;
   participantName: string;
   participantMobile: string;
+  participantInstitute: string;
   accessCode: string;
   timestamp: number;
 }
@@ -118,14 +119,15 @@ function App() {
 
   // Handle client-side routing - ONLY RUN ONCE with lock
   useEffect(() => {
-    if (isInitialized) return; // Prevent multiple initializations
-    
-    // Additional lock to prevent double initialization
-    const initLock = sessionStorage.getItem('app_initializing');
-    if (initLock) return;
-    
-    sessionStorage.setItem('app_initializing', 'true');
-    console.log('🔄 [APP] One-time initialization starting...');
+    const initializeApp = async () => {
+      if (isInitialized) return; // Prevent multiple initializations
+      
+      // Additional lock to prevent double initialization
+      const initLock = sessionStorage.getItem('app_initializing');
+      if (initLock) return;
+      
+      sessionStorage.setItem('app_initializing', 'true');
+      console.log('🔄 [APP] One-time initialization starting...');
     
     const path = window.location.pathname;
     const search = window.location.search;
@@ -187,17 +189,41 @@ function App() {
     if (savedSession) {
       console.log('💾 [APP] Restoring participant session:', savedSession);
       
-      // Validate session data
+      // Validate session data and verify participant still exists in database
       if (savedSession.sessionId && savedSession.participantId && savedSession.participantName && savedSession.participantMobile) {
-      setAppState({
-        type: 'participant-quiz',
-        sessionId: savedSession.sessionId,
-        participantId: savedSession.participantId,
-        participantName: savedSession.participantName,
-        participantMobile: savedSession.participantMobile
-      });
-        setIsInitialized(true);
-      return;
+        try {
+          // Verify the participant still exists in the database
+          const { data: participant, error } = await supabase
+            .from('quiz_participants')
+            .select('*')
+            .eq('id', savedSession.participantId)
+            .single();
+
+          if (!error && participant) {
+            console.log('✅ [APP] Participant verified, restoring session');
+            // Update last_seen to show participant is active
+            await supabase
+              .from('quiz_participants')
+              .update({ last_seen: new Date().toISOString() })
+              .eq('id', savedSession.participantId);
+
+            setAppState({
+              type: 'participant-quiz',
+              sessionId: savedSession.sessionId,
+              participantId: savedSession.participantId,
+              participantName: savedSession.participantName,
+              participantMobile: savedSession.participantMobile
+            });
+            setIsInitialized(true);
+            return;
+          } else {
+            console.warn('💾 [APP] Participant no longer exists in database, clearing session');
+            clearParticipantSession();
+          }
+        } catch (dbError) {
+          console.error('💾 [APP] Error verifying participant, clearing session:', dbError);
+          clearParticipantSession();
+        }
       } else {
         console.warn('💾 [APP] Invalid session data, clearing:', savedSession);
         clearParticipantSession();
@@ -237,12 +263,15 @@ function App() {
     }
     
     // Default to landing page
-    console.log('🏠 [APP] Defaulting to landing page');
-    setAppState({ type: 'landing' });
-    setIsInitialized(true);
-    
-    // Clear initialization lock
-    sessionStorage.removeItem('app_initializing');
+      console.log('🏠 [APP] Defaulting to landing page');
+      setAppState({ type: 'landing' });
+      setIsInitialized(true);
+      
+      // Clear initialization lock
+      sessionStorage.removeItem('app_initializing');
+    };
+
+    initializeApp();
   }, []); // Empty dependency array - run only once
   
   // Prevent re-initialization on app state changes
@@ -369,6 +398,7 @@ function App() {
         participantId,
         participantName: name,
         participantMobile: mobile,
+        participantInstitute: institute,
         accessCode: sessionId,
         timestamp: Date.now()
       });

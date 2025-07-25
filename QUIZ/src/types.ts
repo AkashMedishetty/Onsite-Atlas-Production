@@ -18,6 +18,7 @@ export interface Participant {
   id: string;
   name: string;
   mobile: string;
+  institute: string;
   score: number;
   answers: { [questionId: string]: ParticipantAnswer };
   joinedAt: number;

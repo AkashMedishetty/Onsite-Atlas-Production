@@ -49,7 +49,7 @@ export const useOptimizedSupabaseQuiz = (sessionId: string): UseOptimizedSupabas
       description: '',
       defaultTimeLimit: 30,
       pointsPerQuestion: 100,
-      speedBonus: true,
+      speedBonus: false,
       streakBonus: true,
       showLeaderboardDuringQuiz: true,
       allowLateJoining: true,
@@ -248,6 +248,12 @@ export const useOptimizedSupabaseQuiz = (sessionId: string): UseOptimizedSupabas
   useEffect(() => {
     handleRealtimeUpdateRef.current = (update: QuizStateUpdate) => {
       console.log('[QUIZ] Received real-time update:', update.type);
+      
+      // CRITICAL: Only reload for meaningful updates, ignore participant spam
+      if (update.type === 'PARTICIPANT_UPDATE') {
+        console.log('[QUIZ] Ignoring PARTICIPANT_UPDATE to prevent infinite loop');
+        return;
+      }
       
       // Invalidate cache for this session
       quizDataCache.delete(sessionIdRef.current);

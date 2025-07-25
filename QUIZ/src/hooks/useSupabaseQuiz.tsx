@@ -113,8 +113,8 @@ export const useSupabaseQuiz = (sessionId: string) => {
       const [questionsResult, participantsResult] = await Promise.all([
         supabase
           .from('quiz_questions')
-          .select('id, question, options, correct_answer, time_limit, points, category, difficulty, order_index, image_url, option_images')
-          .eq('quiz_session_id', sessionId)
+                  .select('id, question, options, correct_answer, time_limit, points, category, difficulty, order_index, image_url')
+        .eq('quiz_session_id', sessionId)
           .order('order_index', { ascending: true })
           .limit(20), // Much smaller for faster loading
         supabase
@@ -161,7 +161,7 @@ export const useSupabaseQuiz = (sessionId: string) => {
         orderIndex: q.order_index,
         imageUrl: q.image_url || undefined,
         image_url: q.image_url || undefined,
-        option_images: q.option_images || undefined,
+                  optionImages: undefined,
       }));
 
       const newState: QuizState = {
@@ -281,7 +281,7 @@ export const useSupabaseQuiz = (sessionId: string) => {
       const { data, error } = await supabase
         .from('quiz_questions')
         .insert(insertData)
-        .select('id, question, options, correct_answer, time_limit, points, category, difficulty, order_index, image_url, option_images')
+        .select('id, question, options, correct_answer, time_limit, points, category, difficulty, order_index, image_url')
         .single();
 
       if (error) {
@@ -303,7 +303,7 @@ export const useSupabaseQuiz = (sessionId: string) => {
         difficulty: data.difficulty as 'easy' | 'medium' | 'hard',
         orderIndex: data.order_index,
         imageUrl: data.image_url || undefined,
-        optionImages: data.option_images || undefined,
+        optionImages: undefined,
       };
       
       const newState = {
