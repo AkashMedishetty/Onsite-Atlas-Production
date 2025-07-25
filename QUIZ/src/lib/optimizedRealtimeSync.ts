@@ -1,9 +1,9 @@
 import { supabase } from './supabase';
 
-const CONNECTION_TIMEOUT = 10000; // 10 seconds
-const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+const CONNECTION_TIMEOUT = 15000; // 15 seconds (increased for stability)
+const HEARTBEAT_INTERVAL = 60000; // 60 seconds (less aggressive monitoring)
 const MAX_RETRY_ATTEMPTS = 3;
-const RETRY_DELAY_BASE = 2000; // 2 seconds
+const RETRY_DELAY_BASE = 3000; // 3 seconds (slightly longer initial delay)
 
 export interface QuizStateUpdate {
   type: 'START_QUIZ' | 'START_QUESTION' | 'SHOW_RESULTS' | 'FINISH_QUIZ' | 'PARTICIPANT_UPDATE' | 'QUESTION_ADDED';
@@ -23,6 +23,7 @@ interface SubscriptionState {
   heartbeatTimer?: NodeJS.Timeout;
   retryCount: number;
   lastSeen: number;
+  cleanupTimer?: NodeJS.Timeout;
 }
 
 class OptimizedRealtimeSync {
@@ -69,9 +70,9 @@ class OptimizedRealtimeSync {
     const now = Date.now();
     
     this.subscriptions.forEach((state, sessionId) => {
-      // Check if connection is stale
-      if (state.isConnected && now - state.lastSeen > HEARTBEAT_INTERVAL * 2) {
-        console.warn(`[SYNC] Stale connection for session ${sessionId}, reconnecting...`);
+      // Check if connection is stale (more lenient timing)
+      if (state.isConnected && now - state.lastSeen > HEARTBEAT_INTERVAL * 3) {
+        console.warn(`[SYNC] Stale connection for session ${sessionId} (last seen ${Math.round((now - state.lastSeen) / 1000)}s ago), reconnecting...`);
         this.reconnectSession(sessionId);
       }
     });
@@ -79,17 +80,23 @@ class OptimizedRealtimeSync {
 
   private async reconnectSession(sessionId: string) {
     const state = this.subscriptions.get(sessionId);
-    if (!state || state.retryCount >= MAX_RETRY_ATTEMPTS) {
-      console.error(`[SYNC] Max retry attempts reached for session ${sessionId}`);
-      this.unsubscribe(sessionId);
-      return;
+    if (!state) return;
+    
+    // Don't give up after max retries - just log and keep trying with longer delays
+    if (state.retryCount >= MAX_RETRY_ATTEMPTS) {
+      console.warn(`[SYNC] Max retry attempts reached for session ${sessionId}, using extended delay`);
+      state.retryCount = MAX_RETRY_ATTEMPTS; // Cap at max but don't unsubscribe
+    } else {
+      state.retryCount++;
     }
 
-    state.retryCount++;
     state.isConnected = false;
 
-    // Exponential backoff
-    const delay = RETRY_DELAY_BASE * Math.pow(2, state.retryCount - 1);
+    // Exponential backoff with extended delay for persistent failures
+    const baseDelay = state.retryCount >= MAX_RETRY_ATTEMPTS ? 30000 : RETRY_DELAY_BASE; // 30s for persistent failures
+    const delay = baseDelay * Math.pow(2, Math.min(state.retryCount - 1, 3)); // Cap exponential growth
+    
+    console.log(`[SYNC] Retrying connection for session ${sessionId} in ${delay}ms (attempt ${state.retryCount})`);
     
     setTimeout(() => {
       if (!this.isDestroyed && this.subscriptions.has(sessionId)) {
@@ -275,7 +282,8 @@ class OptimizedRealtimeSync {
         callbacks: new Set(),
         channel: null,
         retryCount: 0,
-        lastSeen: Date.now()
+        lastSeen: Date.now(),
+        cleanupTimer: undefined
       };
       this.subscriptions.set(sessionId, state);
       
@@ -292,9 +300,29 @@ class OptimizedRealtimeSync {
       if (currentState) {
         currentState.callbacks.delete(callback);
         
-        // Clean up if no more callbacks
+        // Clean up if no more callbacks after grace period (prevents premature disconnections)
         if (currentState.callbacks.size === 0) {
-          this.unsubscribe(sessionId);
+          console.log(`[SYNC] No more callbacks for session ${sessionId}, scheduling cleanup in 30s`);
+          
+          // Clear any existing cleanup timer
+          if (currentState.cleanupTimer) {
+            clearTimeout(currentState.cleanupTimer);
+          }
+          
+          // Schedule cleanup with grace period
+          currentState.cleanupTimer = setTimeout(() => {
+            const state = this.subscriptions.get(sessionId);
+            if (state && state.callbacks.size === 0) {
+              console.log(`[SYNC] Grace period expired, cleaning up session ${sessionId}`);
+              this.unsubscribe(sessionId);
+            }
+          }, 30000); // 30 second grace period
+        } else {
+          // Cancel cleanup if new callbacks are added
+          if (currentState.cleanupTimer) {
+            clearTimeout(currentState.cleanupTimer);
+            currentState.cleanupTimer = undefined;
+          }
         }
       }
     };
@@ -309,6 +337,11 @@ class OptimizedRealtimeSync {
     // Clear heartbeat
     if (state.heartbeatTimer) {
       clearInterval(state.heartbeatTimer);
+    }
+
+    // Clear cleanup timer
+    if (state.cleanupTimer) {
+      clearTimeout(state.cleanupTimer);
     }
 
     // Remove channel
