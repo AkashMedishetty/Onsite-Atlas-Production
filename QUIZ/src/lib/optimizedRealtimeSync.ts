@@ -4,6 +4,7 @@ const CONNECTION_TIMEOUT = 15000; // 15 seconds (increased for stability)
 const HEARTBEAT_INTERVAL = 60000; // 60 seconds (less aggressive monitoring)
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_BASE = 3000; // 3 seconds (slightly longer initial delay)
+const SYNC_DEBOUNCE_TIME = 500; // 500ms debounce for sync updates
 
 export interface QuizStateUpdate {
   type: 'START_QUIZ' | 'START_QUESTION' | 'SHOW_RESULTS' | 'FINISH_QUIZ' | 'PARTICIPANT_UPDATE' | 'QUESTION_ADDED';
@@ -24,6 +25,8 @@ interface SubscriptionState {
   retryCount: number;
   lastSeen: number;
   cleanupTimer?: NodeJS.Timeout;
+  lastUpdateTime: number;
+  pendingUpdate?: NodeJS.Timeout;
 }
 
 class OptimizedRealtimeSync {
@@ -219,6 +222,36 @@ class OptimizedRealtimeSync {
     const state = this.subscriptions.get(sessionId);
     if (!state) return;
 
+    // Debounce rapid updates to improve sync smoothness (except for critical updates)
+    const now = Date.now();
+    const isCriticalUpdate = ['START_QUIZ', 'FINISH_QUIZ'].includes(update.type);
+    
+    if (!isCriticalUpdate && now - state.lastUpdateTime < SYNC_DEBOUNCE_TIME) {
+      // Clear any pending update
+      if (state.pendingUpdate) {
+        clearTimeout(state.pendingUpdate);
+      }
+      
+      // Schedule delayed update
+      state.pendingUpdate = setTimeout(() => {
+        this.executeBroadcast(sessionId, update);
+        state.lastUpdateTime = Date.now();
+      }, SYNC_DEBOUNCE_TIME);
+      
+      return;
+    }
+
+    // Execute immediate update for critical updates or when debounce time has passed
+    this.executeBroadcast(sessionId, update);
+    state.lastUpdateTime = now;
+  }
+
+  private executeBroadcast(sessionId: string, update: QuizStateUpdate) {
+    const state = this.subscriptions.get(sessionId);
+    if (!state) return;
+
+    console.log(`[SYNC] Broadcasting ${update.type} to ${state.callbacks.size} callbacks`);
+
     // Broadcast to all callbacks for this session
     state.callbacks.forEach(callback => {
       try {
@@ -283,7 +316,9 @@ class OptimizedRealtimeSync {
         channel: null,
         retryCount: 0,
         lastSeen: Date.now(),
-        cleanupTimer: undefined
+        cleanupTimer: undefined,
+        lastUpdateTime: 0,
+        pendingUpdate: undefined
       };
       this.subscriptions.set(sessionId, state);
       
@@ -342,6 +377,11 @@ class OptimizedRealtimeSync {
     // Clear cleanup timer
     if (state.cleanupTimer) {
       clearTimeout(state.cleanupTimer);
+    }
+
+    // Clear pending update timer
+    if (state.pendingUpdate) {
+      clearTimeout(state.pendingUpdate);
     }
 
     // Remove channel

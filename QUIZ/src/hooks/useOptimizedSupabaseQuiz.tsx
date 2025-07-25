@@ -7,6 +7,8 @@ import { optimizedSync, QuizStateUpdate } from '../lib/optimizedRealtimeSync';
 const quizDataCache = new Map<string, { data: QuizState; timestamp: number; ttl: number }>();
 const DEFAULT_CACHE_TTL = 10000; // 10 seconds
 const LOADING_DEBOUNCE = 300; // 300ms debounce
+const MAX_RETRY_ATTEMPTS = 3;
+const RETRY_DELAY_BASE = 1000; // 1 second base delay
 
 interface UseOptimizedSupabaseQuizReturn {
   quizState: QuizState;
@@ -137,7 +139,7 @@ export const useOptimizedSupabaseQuiz = (sessionId: string): UseOptimizedSupabas
       const [questionsResult, participantsResult] = await Promise.allSettled([
         supabase
           .from('quiz_questions')
-          .select('id, question, options, correct_answer, time_limit, points, category, difficulty, order_index, image_url, option_images')
+          .select('id, question, options, correct_answer, time_limit, points, category, difficulty, order_index, image_url')
           .eq('quiz_session_id', currentSessionId)
           .order('order_index', { ascending: true }),
         supabase

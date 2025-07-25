@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { QuizState, Participant, Question, QuizSettings, ParticipantAnswer } from '../types';
+import { QuizState, Participant, Question, QuizSettings, ParticipantAnswer, QuizStatistics } from '../types';
 import { debounce } from 'lodash';
 
 const STORAGE_KEY = 'quiz-state';
@@ -143,22 +143,8 @@ export const useQuizState = () => {
   }, []);
 
   const calculatePoints = useCallback((isCorrect: boolean, timeToAnswer: number, timeLimit: number, basePoints: number, streak: number, settings: QuizSettings): number => {
-    if (!isCorrect) return 0;
-    
-    let points = basePoints;
-    
-    // Speed bonus
-    if (settings.speedBonus) {
-      const speedMultiplier = Math.max(0.5, 1 - (timeToAnswer / timeLimit) * 0.5);
-      points *= speedMultiplier;
-    }
-    
-    // Streak bonus
-    if (settings.streakBonus && streak > 1) {
-      points *= Math.min(2, 1 + (streak - 1) * 0.1);
-    }
-    
-    return Math.round(points);
+    // Simple right/wrong scoring - no time-based or streak bonuses
+    return isCorrect ? basePoints : 0;
   }, []);
 
   const submitAnswer = useCallback((participantId: string, questionId: string, answerIndex: number, timeToAnswer: number) => {
