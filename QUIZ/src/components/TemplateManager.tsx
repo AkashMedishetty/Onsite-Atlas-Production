@@ -22,13 +22,11 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
     templates,
     loading,
     error,
-    saveAsTemplate,
-    loadTemplate,
+    saveTemplate,
     createSessionFromTemplate,
     deleteTemplate,
-    generateSessionId,
     generateReadableSessionId,
-  } = useQuizTemplates();
+  } = useQuizTemplates(hostId);
 
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -55,13 +53,12 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
     if (!saveForm.title.trim()) return;
 
     try {
-      await saveAsTemplate(
+      await saveTemplate(
         saveForm.title,
         saveForm.description,
         questions,
         settings,
-        saveForm.isPublic,
-        hostId
+        saveForm.isPublic
       );
       
       setShowSaveModal(false);
@@ -73,8 +70,7 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
 
   const handleLoadTemplate = async (template: QuizTemplate) => {
     try {
-      const fullTemplate = await loadTemplate(template.id);
-      onLoadTemplate(fullTemplate.questions, fullTemplate.settings);
+      onLoadTemplate(template.questions, template.settings);
     } catch (err) {
       console.error('Failed to load template:', err);
     }
@@ -84,34 +80,11 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
     if (!selectedTemplate) return;
 
     try {
-      let sessionId: string;
-      
-      // Generate session ID based on format
-      switch (createForm.sessionIdFormat) {
-        case 'readable':
-          sessionId = generateReadableSessionId();
-          break;
-        case 'short':
-          sessionId = generateSessionId('short');
-          break;
-        case 'long':
-          sessionId = generateSessionId('long');
-          break;
-        case 'custom':
-          sessionId = generateSessionId('custom', createForm.customLength);
-          break;
-        default:
-          sessionId = generateSessionId('short');
+      const finalSessionId = await createSessionFromTemplate(selectedTemplate.id);
+
+      if (finalSessionId) {
+        onCreateSession(finalSessionId);
       }
-
-      const finalSessionId = await createSessionFromTemplate(
-        selectedTemplate.id,
-        hostId,
-        createForm.scheduledStartTime ? new Date(createForm.scheduledStartTime) : undefined,
-        createForm.accessCode || undefined
-      );
-
-      onCreateSession(finalSessionId);
       setShowCreateModal(false);
       setSelectedTemplate(null);
       setCreateForm({
@@ -221,7 +194,7 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
           <div className="bg-black border border-orange-400 p-4 mb-6">
             <div className="text-orange-400 font-mono font-bold mb-2">SELECTED TEMPLATE:</div>
             <div className="text-white font-mono text-xl font-bold">{selectedTemplate.title}</div>
-            <div className="text-gray-400 font-mono text-sm">{selectedTemplate.question_count} QUESTIONS</div>
+                              <div className="text-gray-400 font-mono text-sm">{selectedTemplate.questions.length} QUESTIONS</div>
           </div>
         )}
         
@@ -381,7 +354,7 @@ export const TemplateManager: React.FC<TemplateManagerProps> = ({
                   <div className="flex items-center gap-6 text-xs text-gray-400 font-mono">
                     <div className="flex items-center gap-1">
                       <Target className="w-3 h-3" />
-                      {template.question_count} QUESTIONS
+                      {template.questions.length} QUESTIONS
                     </div>
                     <div className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />

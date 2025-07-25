@@ -34,28 +34,26 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
     forceUpdate,
   } = useSupabaseQuiz(sessionId);
 
-  // Subscribe to unified sync updates for host
+  // DISABLED: Sync causing loops - will fix after performance issues resolved
+  // useEffect(() => {
+  //   if (!sessionId) return;
+  //   console.log('⚡ [HOST] Setting up unified sync for session:', sessionId);
+  //   // Temporarily disabled to fix performance
+  // }, [sessionId]);
+  
+  // Manual refresh instead of real-time (temporary)
   useEffect(() => {
     if (!sessionId) return;
-
-    console.log('⚡ [HOST] Setting up unified sync for session:', sessionId);
-
-    const unsubscribe = unifiedSync.subscribeToUpdates(sessionId, (update) => {
-      console.log('🚀 [HOST] Unified sync update:', update.type, 'at', new Date(update.timestamp).toISOString());
-      
-      // Force reload data when host receives updates
-      switch (update.type) {
-        case 'START_QUIZ':
-        case 'START_QUESTION':
-        case 'SHOW_RESULTS':
-        case 'FINISH_QUIZ':
-          console.log('⚡ [HOST] State update received, forcing reload');
-          if (forceUpdate) forceUpdate();
-          break;
+    
+    // Refresh data every 5 seconds instead of real-time
+    const interval = setInterval(() => {
+      if (forceUpdate) {
+        console.log('🔄 [HOST] Manual refresh');
+        forceUpdate();
       }
-    }, 'host');
-
-    return unsubscribe;
+    }, 5000);
+    
+    return () => clearInterval(interval);
   }, [sessionId, forceUpdate]);
 
   const [newQuestion, setNewQuestion] = useState({
@@ -114,6 +112,9 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
 
   const handleAddQuestion = async () => {
     if (newQuestion.question.trim() && newQuestion.options.every(opt => opt.trim())) {
+      const startTime = Date.now();
+      console.log('⏱️ [HOST] Adding question started at:', new Date().toISOString());
+      
       try {
         await addQuestion({
           question: newQuestion.question,
@@ -127,6 +128,9 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
           optionImages: newQuestion.optionImages,
         });
         
+        const duration = Date.now() - startTime;
+        console.log(`✅ [HOST] Question added in ${duration}ms`);
+        
         setNewQuestion({
           question: '',
           options: ['', '', '', ''],
@@ -139,7 +143,9 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
           imageUrl: '',
         });
       } catch (err) {
-        console.error('Failed to add question:', err);
+        const duration = Date.now() - startTime;
+        console.error(`❌ [HOST] Failed to add question after ${duration}ms:`, err);
+        alert(`Failed to add question after ${duration}ms. Please try again.`);
       }
     }
   };
@@ -283,34 +289,45 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
   };
 
   const exportResults = () => {
-    const results = {
-      quiz: quizState.quizSettings,
-      participants: quizState.participants,
-      questions: quizState.questions,
-    };
-    // Create Excel-compatible CSV data
+    // Create comprehensive Excel-compatible CSV data
     const csvData = [];
     
-    // Header row
+    // Quiz Summary Header
+    csvData.push(['QUIZ RESULTS EXPORT']);
+    csvData.push(['Quiz Title:', quizState.quizSettings.title]);
+    csvData.push(['Description:', quizState.quizSettings.description]);
+    csvData.push(['Export Date:', new Date().toLocaleString()]);
+    csvData.push(['Total Questions:', quizState.questions.length]);
+    csvData.push(['Total Participants:', quizState.participants.length]);
+    csvData.push(['Average Score:', Math.round(quizState.statistics.averageScore)]);
+    csvData.push(['Participation Rate:', Math.round(quizState.statistics.participationRate) + '%']);
+    csvData.push([]);
+    
+    // Participant Results Header
     csvData.push([
       'Rank',
       'Name',
       'Mobile',
-      'Score',
+      'Final Score',
       'Correct Answers',
       'Total Questions',
       'Accuracy %',
-      'Streak',
-      'Badges',
-      'Join Time'
+      'Best Streak',
+      'Badges Earned',
+      'Join Time',
+      'Total Answer Time (s)',
+      'Average Time Per Question (s)'
     ]);
     
     // Sort participants by score
     const sortedParticipants = [...quizState.participants].sort((a, b) => b.score - a.score);
     
-    // Add participant data
+    // Add participant data with detailed analytics
     sortedParticipants.forEach((participant, index) => {
-      const correctAnswers = Object.values(participant.answers).filter(a => a.isCorrect).length;
+      const answers = Object.values(participant.answers);
+      const correctAnswers = answers.filter(a => a.isCorrect).length;
+      const totalAnswerTime = answers.reduce((sum, a) => sum + a.timeToAnswer, 0);
+      const avgTimePerQuestion = answers.length > 0 ? totalAnswerTime / answers.length : 0;
       const accuracy = quizState.questions.length > 0 ? (correctAnswers / quizState.questions.length) * 100 : 0;
       
       csvData.push([
@@ -320,16 +337,60 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
         participant.score,
         correctAnswers,
         quizState.questions.length,
-        Math.round(accuracy),
+        Math.round(accuracy * 10) / 10, // One decimal place
         participant.streak,
-        participant.badges.join(', '),
-        new Date(participant.joinedAt).toLocaleString()
+        participant.badges.join('; '),
+        new Date(participant.joinedAt).toLocaleString(),
+        Math.round(totalAnswerTime * 10) / 10,
+        Math.round(avgTimePerQuestion * 10) / 10
+      ]);
+    });
+    
+    csvData.push([]);
+    
+    // Question Analysis Header
+    csvData.push(['QUESTION ANALYSIS']);
+    csvData.push([
+      'Question #',
+      'Question Text',
+      'Correct Answer',
+      'Total Responses',
+      'Correct Responses',
+      'Accuracy Rate %',
+      'Average Response Time (s)',
+      'Difficulty',
+      'Points'
+    ]);
+    
+    // Add question analytics
+    quizState.questions.forEach((question, index) => {
+      const questionAnswers = sortedParticipants
+        .map(p => p.answers[question.id])
+        .filter(a => a);
+      
+      const correctCount = questionAnswers.filter(a => a.isCorrect).length;
+      const totalResponses = questionAnswers.length;
+      const accuracy = totalResponses > 0 ? (correctCount / totalResponses) * 100 : 0;
+      const avgResponseTime = questionAnswers.length > 0 
+        ? questionAnswers.reduce((sum, a) => sum + a.timeToAnswer, 0) / questionAnswers.length 
+        : 0;
+      
+      csvData.push([
+        index + 1,
+        question.question,
+        question.options[question.correctAnswer],
+        totalResponses,
+        correctCount,
+        Math.round(accuracy * 10) / 10,
+        Math.round(avgResponseTime * 10) / 10,
+        question.difficulty || 'medium',
+        question.points || quizState.quizSettings.pointsPerQuestion
       ]);
     });
     
     // Convert to CSV string
     const csvString = csvData.map(row => 
-      row.map(cell => `"${cell}"`).join(',')
+      row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
     ).join('\n');
     
     // Create and download file
@@ -610,12 +671,30 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
     );
   }
 
-  if (loading) {
+  if (loading && quizState.questions.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+      <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white text-lg">Loading quiz dashboard...</p>
+          <div className="w-12 h-12 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-cyan-400 font-mono text-sm">LOADING QUIZ DATA...</p>
+          <p className="text-gray-500 font-mono text-xs mt-2">Session: {sessionId}</p>
+          <div className="mt-4 space-x-4">
+            <button
+              onClick={() => {
+                console.log('🔄 Force reload triggered');
+                if (forceUpdate) forceUpdate();
+              }}
+              className="text-green-400 hover:text-green-300 font-mono text-xs underline"
+            >
+              FORCE RELOAD
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="text-orange-400 hover:text-orange-300 font-mono text-xs underline"
+            >
+              REFRESH PAGE
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -713,7 +792,52 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
           </div>
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={() => window.open(`/big-screen/${displayCode}`, '_blank')}
+              onClick={() => {
+                const shareableLink = `${window.location.origin}?join=${sessionId}`;
+                navigator.clipboard.writeText(shareableLink).then(() => {
+                  // Create a temporary notification element
+                  const notification = document.createElement('div');
+                  notification.innerHTML = `
+                    <div style="position: fixed; top: 20px; right: 20px; background: #10B981; color: white; padding: 16px; border-radius: 8px; z-index: 9999; font-family: monospace; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                      ✅ SHAREABLE LINK COPIED!<br/>
+                      <small style="opacity: 0.9;">Share: ${shareableLink}</small>
+                    </div>
+                  `;
+                  document.body.appendChild(notification);
+                  setTimeout(() => document.body.removeChild(notification), 3000);
+                }).catch(() => {
+                  alert('Shareable link: ' + shareableLink);
+                });
+              }}
+              className="bg-black border border-green-400/50 hover:border-green-400 text-green-400 hover:text-white px-3 sm:px-4 py-2 transition-colors flex items-center gap-2 text-sm sm:text-base font-mono font-bold uppercase tracking-wider"
+            >
+                          <Users className="w-4 h-4" />
+            SHARE LINK
+          </button>
+          
+          <button
+            onClick={() => {
+              console.log('🔄 [HOST] Manual refresh triggered for session:', sessionId);
+              // Force reload data instead of full page refresh
+              if (forceUpdate) {
+                forceUpdate();
+              } else {
+                window.location.reload();
+              }
+            }}
+            className="bg-black border border-orange-400/50 hover:border-orange-400 text-orange-400 hover:text-white px-3 sm:px-4 py-2 transition-colors flex items-center gap-2 text-sm sm:text-base font-mono font-bold uppercase tracking-wider"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            REFRESH
+          </button>
+            <button
+              onClick={() => {
+                const bigScreenUrl = `${window.location.origin}/big-screen/${displayCode}`;
+                console.log('🎮 [HOST] Opening big screen at:', bigScreenUrl);
+                window.open(bigScreenUrl, '_blank', 'width=1920,height=1080,fullscreen=yes');
+              }}
               className="bg-black border border-purple-400/50 hover:border-purple-400 text-purple-400 hover:text-white px-3 sm:px-4 py-2 transition-colors flex items-center gap-2 text-sm sm:text-base font-mono font-bold uppercase tracking-wider"
             >
               <Monitor className="w-4 h-4" />

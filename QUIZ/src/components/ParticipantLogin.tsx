@@ -4,14 +4,16 @@ import { ArrowLeft, Users, Zap, Shield, Wifi, Activity, Terminal, Lock } from 'l
 interface ParticipantLoginProps {
   onJoin: (name: string, sessionId: string, mobile: string) => Promise<void>;
   onBack: () => void;
+  directSessionId?: string;
 }
 
 export const ParticipantLogin: React.FC<ParticipantLoginProps> = ({
   onJoin,
   onBack,
+  directSessionId,
 }) => {
   const [name, setName] = useState('');
-  const [sessionId, setSessionId] = useState('');
+  const [sessionId, setSessionId] = useState(directSessionId || '');
   const [mobile, setMobile] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

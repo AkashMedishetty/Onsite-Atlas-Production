@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Trophy, Users, Clock, Target, Zap, Award, TrendingUp, Activity, CheckCircle, XCircle, Crown, Medal, Star, Play, Timer, BarChart3, Wifi } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { unifiedSync } from '../lib/realtimeSync';
+import { optimizedSync } from '../lib/optimizedRealtimeSync';
 
 interface BigScreenDisplayProps {
   accessCode: string;
@@ -15,7 +15,14 @@ interface AnswerStats {
 }
 
 export const BigScreenDisplay: React.FC<BigScreenDisplayProps> = ({ accessCode }) => {
-  console.log('🎮 [BIG SCREEN] Component mounted with accessCode:', accessCode);
+  const mountedRef = useRef(false);
+  
+  useEffect(() => {
+    if (!mountedRef.current) {
+      console.log('🎮 [BIG SCREEN] Component mounted with accessCode:', accessCode);
+      mountedRef.current = true;
+    }
+  }, [accessCode]);
   
   const [sessionId, setSessionId] = useState<string>('');
   const [quizState, setQuizState] = useState<{
@@ -63,14 +70,26 @@ export const BigScreenDisplay: React.FC<BigScreenDisplayProps> = ({ accessCode }
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Subscribe to unified sync updates
+  // FIXED: Add effect to log access code and prevent redirects
+  useEffect(() => {
+    console.log('🎮 [BIG SCREEN] Initialized with access code:', accessCode);
+    
+    // Ensure URL stays correct
+    const expectedPath = `/big-screen/${accessCode}`;
+    if (window.location.pathname !== expectedPath) {
+      console.log('🎮 [BIG SCREEN] Fixing URL from', window.location.pathname, 'to', expectedPath);
+      window.history.replaceState({}, '', expectedPath);
+    }
+  }, [accessCode]);
+
+  // Subscribe to optimized sync updates
   useEffect(() => {
     if (!sessionId) return;
 
-    console.log('⚡ [BIG SCREEN] Setting up unified sync for session:', sessionId);
+    console.log('⚡ [BIG SCREEN] Setting up optimized sync for session:', sessionId);
 
-    const unsubscribe = unifiedSync.subscribeToUpdates(sessionId, (update) => {
-      console.log('🚀 [BIG SCREEN] Unified sync update:', update.type, 'at', new Date(update.timestamp).toISOString());
+    const unsubscribe = optimizedSync.subscribe(sessionId, (update) => {
+      console.log('🚀 [BIG SCREEN] Optimized sync update:', update.type, 'at', new Date(update.timestamp).toISOString());
       
       // Immediate state updates without delays
       switch (update.type) {
@@ -87,14 +106,18 @@ export const BigScreenDisplay: React.FC<BigScreenDisplayProps> = ({ accessCode }
           console.log('⚡ [BIG SCREEN] Quiz finished, reloading data immediately');
           loadQuizData();
           break;
+        case 'PARTICIPANT_UPDATE':
+          console.log('⚡ [BIG SCREEN] Participant update, reloading data');
+          loadQuizData();
+          break;
       }
     }, 'bigscreen');
 
     return unsubscribe;
   }, [sessionId]);
 
-  // Load quiz data function
-  const loadQuizData = async () => {
+  // Load quiz data function - stabilized with useCallback
+  const loadQuizData = useCallback(async () => {
     if (!sessionId) return;
     
     try {
@@ -178,6 +201,9 @@ export const BigScreenDisplay: React.FC<BigScreenDisplayProps> = ({ accessCode }
         category: q.category,
         difficulty: q.difficulty,
         orderIndex: q.order_index,
+        imageUrl: q.image_url || undefined,
+        image_url: q.image_url || undefined,
+        option_images: q.option_images || undefined,
       }));
 
       const newState = {
@@ -220,41 +246,10 @@ export const BigScreenDisplay: React.FC<BigScreenDisplayProps> = ({ accessCode }
     } finally {
       setLoading(false);
     }
-  };
-
-  // Listen for INSTANT updates
-  useEffect(() => {
-    if (!sessionId) return;
-
-    console.log('🔄 [BIG SCREEN] Setting up database subscriptions for session:', sessionId);
-
-    // Create unique channel for database updates
-    const channelName = `bigscreen_db_${sessionId}_${Date.now()}`;
-    const realtimeChannel = supabase
-      .channel(channelName)
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'quiz_answers', filter: `quiz_session_id=eq.${sessionId}` },
-        (payload) => {
-          console.log('📊 [BIG SCREEN] Answer update');
-          loadAnswerStats();
-        }
-      )
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'quiz_participants', filter: `quiz_session_id=eq.${sessionId}` },
-        (payload) => {
-          console.log('👥 [BIG SCREEN] Participants update');
-          loadQuizData();
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 [BIG SCREEN] DB subscription status:', status);
-      });
-
-    return () => {
-      console.log('🔄 [BIG SCREEN] Removing DB channel:', channelName);
-      supabase.removeChannel(realtimeChannel);
-    };
   }, [sessionId]);
+
+  // REMOVED: Duplicate database subscriptions - optimized sync handles all real-time updates
+  // The optimized sync system handles all real-time updates centrally
 
   // Add supabase to window for debugging
   useEffect(() => {
@@ -325,8 +320,8 @@ export const BigScreenDisplay: React.FC<BigScreenDisplayProps> = ({ accessCode }
     });
   }, [quizState]);
 
-  // Load answer statistics for current question
-  const loadAnswerStats = async () => {
+  // Load answer statistics for current question - stabilized with useCallback
+  const loadAnswerStats = useCallback(async () => {
     if (!sessionId || !quizState.questions.length || quizState.currentQuestionIndex < 0) {
       setAnswerStats([]);
       return;
@@ -365,7 +360,7 @@ export const BigScreenDisplay: React.FC<BigScreenDisplayProps> = ({ accessCode }
     } catch (err) {
       console.error('❌ [BIG SCREEN] Failed to load answer stats:', err);
     }
-  };
+  }, [sessionId, quizState.questions, quizState.currentQuestionIndex]);
 
   // Load answer stats when question changes
   useEffect(() => {

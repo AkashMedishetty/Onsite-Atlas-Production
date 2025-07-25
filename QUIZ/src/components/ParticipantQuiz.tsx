@@ -49,25 +49,6 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
   participantMobile,
   onBack,
 }) => {
-  // Update last seen timestamp on mount and periodically
-  useEffect(() => {
-    const updateLastSeen = async () => {
-      try {
-        await supabase
-          .from('quiz_participants')
-          .update({ last_seen: new Date().toISOString() })
-          .eq('id', participantId);
-      } catch (error) {
-        console.error('Failed to update last seen:', error);
-      }
-    };
-    
-    updateLastSeen();
-    const interval = setInterval(updateLastSeen, 30000); // Update every 30 seconds
-    
-    return () => clearInterval(interval);
-  }, [participantId]);
-
   const [quizState, setQuizState] = useState<QuizState>({
     isActive: false,
     isFinished: false,
@@ -86,15 +67,107 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Subscribe to unified sync updates
+  // Update last seen timestamp periodically
+  useEffect(() => {
+    const updateLastSeen = async () => {
+      try {
+        await supabase
+          .from('quiz_participants')
+          .update({ last_seen: new Date().toISOString() })
+          .eq('id', participantId);
+      } catch (error) {
+        console.error('Failed to update last seen:', error);
+      }
+    };
+    
+    updateLastSeen();
+    const interval = setInterval(updateLastSeen, 30000); // Update every 30 seconds
+
+      return () => clearInterval(interval);
+  }, [participantId]);
+
+  // OPTIMIZED: Faster quiz data loading
+  const loadQuizData = async () => {
+    try {
+      console.log('📊 [PARTICIPANT] Loading quiz data for session:', sessionId);
+      
+      // FAST LOADING: Load only essential session data
+      const { data: session, error: sessionError } = await supabase
+        .from('quiz_sessions')
+        .select('is_active, is_finished, current_question_index, current_question_start_time, show_results, title, description')
+        .eq('id', sessionId)
+        .single();
+
+      if (sessionError) throw sessionError;
+
+      const newQuizState = {
+        isActive: session.is_active,
+        isFinished: session.is_finished,
+        currentQuestionIndex: session.current_question_index,
+        currentQuestionStartTime: session.current_question_start_time,
+        showResults: session.show_results,
+        title: session.title,
+        description: session.description,
+      };
+
+      console.log('✅ [PARTICIPANT] Quiz state updated:', newQuizState);
+      setQuizState(newQuizState);
+
+      // Load current question if quiz is active (optimized query)
+      if (session.current_question_index >= 0) {
+        const { data: question, error: questionError } = await supabase
+          .from('quiz_questions')
+          .select('id, question, options, correct_answer, time_limit, points, image_url, option_images, order_index')
+          .eq('quiz_session_id', sessionId)
+          .eq('order_index', session.current_question_index)
+          .single();
+
+        if (!questionError && question) {
+          setCurrentQuestion(question);
+          
+          // Quick check for existing answer
+          const { data: existingAnswer } = await supabase
+            .from('quiz_answers')
+            .select('answer_index')
+            .eq('participant_id', participantId)
+            .eq('question_id', question.id)
+            .single();
+
+          if (existingAnswer) {
+            setHasAnswered(true);
+            setSelectedAnswer(existingAnswer.answer_index);
+          } else {
+            setHasAnswered(false);
+            setSelectedAnswer(null);
+          }
+        }
+      } else {
+        setCurrentQuestion(null);
+        setHasAnswered(false);
+        setSelectedAnswer(null);
+      }
+
+      // Load participants in background
+      loadParticipantsData();
+
+    } catch (err) {
+      console.error('❌ [PARTICIPANT] Error loading quiz data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load quiz data');
+    }
+  };
+
+  // Subscribe to unified sync updates with better state management
   useEffect(() => {
     if (!sessionId) return;
 
     console.log('⚡ [PARTICIPANT] Setting up unified sync for session:', sessionId);
+    let isActive = true;
 
     const unsubscribe = unifiedSync.subscribeToUpdates(sessionId, (update) => {
-      console.log('🚀 [PARTICIPANT] Unified sync update:', update.type, 'at', new Date(update.timestamp).toISOString());
+      if (!isActive) return;
       
+      console.log('🚀 [PARTICIPANT] Unified sync update:', update.type);
+          
       // Immediate state updates without delays
       switch (update.type) {
         case 'START_QUIZ':
@@ -113,24 +186,60 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
           console.log('⚡ [PARTICIPANT] Quiz finished, reloading data immediately');
           loadQuizData();
           break;
+        case 'QUESTION_ADDED':
+          console.log('⚡ [PARTICIPANT] New question added, updating data');
+          loadQuizData();
+          break;
+        case 'PARTICIPANT_UPDATE':
+        case 'LEADERBOARD_UPDATE':
+          console.log('⚡ [PARTICIPANT] Leaderboard update');
+          loadParticipantsData();
+          break;
       }
     }, 'participant');
 
-    return unsubscribe;
-  }, [sessionId]);
-  // Load initial data
+    return () => {
+      isActive = false;
+      unsubscribe();
+    };
+  }, [sessionId, loadQuizData]); // Add loadQuizData to deps
+
+  // Load initial data with simplified subscriptions to prevent loops
   useEffect(() => {
     console.log('🎮 [PARTICIPANT] Initializing for session:', sessionId, 'participant:', participantId);
-    loadQuizData();
     
-    // Setup real-time subscriptions
-    const cleanup = setupRealtimeSubscriptions();
-    
-    return () => {
-      console.log('🔄 [PARTICIPANT] Cleaning up subscriptions');
-      cleanup();
+    const initializeData = async () => {
+      setLoading(true);
+      await loadQuizData();
+      setLoading(false);
     };
-  }, [sessionId]);
+
+    initializeData();
+    
+    // SIMPLIFIED: Remove additional postgres subscriptions that were causing conflicts
+    // The unified sync should handle all real-time updates
+    
+  }, [sessionId, participantId]); // Add participantId to deps
+
+  // OPTIMIZED: Load only essential participant data for efficiency
+  const loadParticipantsData = async () => {
+    try {
+      const { data: participantsData, error: participantsError } = await supabase
+        .from('quiz_participants')
+        .select('id, name, mobile, score, streak, badges, avatar_color, joined_at, last_seen')
+        .eq('quiz_session_id', sessionId)
+        .order('score', { ascending: false })
+        .limit(20); // Limit for performance
+
+      if (!participantsError && participantsData) {
+        setParticipants(participantsData);
+        const me = participantsData.find(p => p.id === participantId);
+        if (me) setMyParticipant(me);
+      }
+    } catch (err) {
+      console.error('❌ [PARTICIPANT] Error loading participants:', err);
+    }
+  };
 
   // Timer for current question
   useEffect(() => {
@@ -155,206 +264,11 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
     }
   }, [quizState.currentQuestionStartTime, quizState.showResults, currentQuestion]);
 
-  const loadQuizData = async () => {
-    try {
-      setLoading(true);
-      
-      // Load quiz session
-      const { data: session, error: sessionError } = await supabase
-        .from('quiz_sessions')
-        .select('*')
-        .eq('id', sessionId)
-        .single();
-
-      if (sessionError) throw sessionError;
-
-      setQuizState({
-        isActive: session.is_active,
-        isFinished: session.is_finished,
-        currentQuestionIndex: session.current_question_index,
-        currentQuestionStartTime: session.current_question_start_time,
-        showResults: session.show_results,
-        title: session.title,
-        description: session.description,
-      });
-
-      // Load current question if quiz is active
-      if (session.current_question_index >= 0) {
-        const { data: question, error: questionError } = await supabase
-          .from('quiz_questions')
-          .select('*')
-          .eq('quiz_session_id', sessionId)
-          .eq('order_index', session.current_question_index)
-          .single();
-
-        if (!questionError && question) {
-          setCurrentQuestion(question);
-          
-          // Check if participant has already answered this question
-          const { data: existingAnswer } = await supabase
-            .from('quiz_answers')
-            .select('*')
-            .eq('participant_id', participantId)
-            .eq('question_id', question.id)
-            .single();
-
-          if (existingAnswer) {
-            setHasAnswered(true);
-            setSelectedAnswer(existingAnswer.answer_index);
-          }
-        }
-      }
-
-      // Load participants for leaderboard
-      const { data: participantsData, error: participantsError } = await supabase
-        .from('quiz_participants')
-        .select('*')
-        .eq('quiz_session_id', sessionId)
-        .order('score', { ascending: false });
-
-      if (!participantsError && participantsData) {
-        setParticipants(participantsData);
-        const me = participantsData.find(p => p.id === participantId);
-        if (me) setMyParticipant(me);
-      }
-
-    } catch (err) {
-      console.error('Error loading quiz data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load quiz data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const setupRealtimeSubscriptions = () => {
-    console.log('📡 [PARTICIPANT] Setting up subscriptions for session:', sessionId, 'participant:', participantId);
-    
-    // Create unique channel name
-    const channelName = `participant_db_${sessionId}_${participantId}_${Date.now()}`;
-    
-    const sessionChannel = supabase
-      .channel(channelName)
-      .on('postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'quiz_sessions', filter: `id=eq.${sessionId}` },
-        (payload) => {
-          console.log('🔄 [PARTICIPANT] Session update:', payload.new);
-          const session = payload.new;
-          
-          // Update state immediately
-          setQuizState(prev => {
-            const newState = {
-              ...prev,
-              isActive: session.is_active,
-              isFinished: session.is_finished,
-              currentQuestionIndex: session.current_question_index,
-              currentQuestionStartTime: session.current_question_start_time,
-              showResults: session.show_results,
-              title: session.title || prev.title,
-              description: session.description || prev.description,
-            };
-            
-            // Handle question changes
-            if (prev.currentQuestionIndex !== session.current_question_index) {
-              setHasAnswered(false);
-              setSelectedAnswer(null);
-              loadCurrentQuestion(session.current_question_index);
-            }
-            
-            return newState;
-          });
-          // Let unified sync handle this
-          loadQuizData();
-        }
-      )
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'quiz_participants', filter: `quiz_session_id=eq.${sessionId}` },
-        (payload) => {
-          console.log('👥 [PARTICIPANT] Participants update received:', payload);
-          loadParticipants();
-        }
-      )
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'quiz_answers', filter: `quiz_session_id=eq.${sessionId}` },
-        (payload) => {
-          console.log('💬 [PARTICIPANT] Answers update received:', payload);
-          loadParticipants();
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 [PARTICIPANT] Subscription status:', status);
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ [PARTICIPANT] Successfully subscribed to real-time updates');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ [PARTICIPANT] Channel subscription error');
-          // Retry subscription after delay
-          setTimeout(() => {
-            console.log('🔄 [PARTICIPANT] Retrying subscription...');
-            setupRealtimeSubscriptions();
-          }, 2000);
-        } else if (status === 'TIMED_OUT') {
-          console.error('⏰ [PARTICIPANT] Subscription timed out');
-          // Retry subscription
-          setTimeout(() => {
-            console.log('🔄 [PARTICIPANT] Retrying after timeout...');
-            setupRealtimeSubscriptions();
-          }, 1000);
-        }
-      });
-
-    return () => {
-      console.log('🔄 [PARTICIPANT] Cleaning up subscriptions');
-      supabase.removeChannel(sessionChannel);
-    };
-  };
-
-  const loadCurrentQuestion = async (questionIndex: number) => {
-    if (questionIndex >= 0) {
-      const { data: question, error } = await supabase
-        .from('quiz_questions')
-        .select('*')
-        .eq('quiz_session_id', sessionId)
-        .eq('order_index', questionIndex)
-        .single();
-
-      if (!error && question) {
-        setCurrentQuestion(question);
-        
-        // Check if already answered
-        const { data: existingAnswer } = await supabase
-          .from('quiz_answers')
-          .select('*')
-          .eq('participant_id', participantId)
-          .eq('question_id', question.id)
-          .single();
-
-        if (existingAnswer) {
-          setHasAnswered(true);
-          setSelectedAnswer(existingAnswer.answer_index);
-        }
-      }
-    } else {
-      setCurrentQuestion(null);
-    }
-  };
-
-  const loadParticipants = async () => {
-    const { data: participantsData, error } = await supabase
-      .from('quiz_participants')
-      .select('*')
-      .eq('quiz_session_id', sessionId)
-      .order('score', { ascending: false });
-
-    if (!error && participantsData) {
-      setParticipants(participantsData);
-      const me = participantsData.find(p => p.id === participantId);
-      if (me) setMyParticipant(me);
-    }
-  };
-
   const submitAnswer = async (answerIndex: number) => {
     if (!currentQuestion || hasAnswered || !quizState.currentQuestionStartTime) return;
 
     try {
+      setLoading(true);
       const timeToAnswer = (Date.now() - new Date(quizState.currentQuestionStartTime).getTime()) / 1000;
       const isCorrect = answerIndex === currentQuestion.correct_answer;
       
@@ -401,8 +315,10 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
       setHasAnswered(true);
 
     } catch (err) {
-      console.error('Error submitting answer:', err);
+      console.error('❌ [PARTICIPANT] Error submitting answer:', err);
       alert('Failed to submit answer. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -424,12 +340,24 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
         <div className="bg-red-500/20 border border-red-500 p-8 text-center max-w-md">
           <h2 className="text-xl font-black text-red-300 mb-4 font-mono">CONNECTION ERROR</h2>
           <p className="text-red-200 mb-6 font-mono">{error}</p>
+          <div className="flex gap-4">
+            <button
+              onClick={() => {
+                setError(null);
+                setLoading(true);
+                loadQuizData().finally(() => setLoading(false));
+              }}
+              className="bg-yellow-500 hover:bg-yellow-400 text-black px-4 py-2 font-mono font-bold uppercase tracking-wider transition-colors"
+            >
+              RETRY
+            </button>
           <button
             onClick={onBack}
-            className="bg-red-500 hover:bg-red-400 text-white px-6 py-3 font-mono font-bold uppercase tracking-wider transition-colors"
+              className="bg-red-500 hover:bg-red-400 text-white px-4 py-2 font-mono font-bold uppercase tracking-wider transition-colors"
           >
-            RETURN TO HOME
+              EXIT
           </button>
+          </div>
         </div>
       </div>
     );
@@ -690,8 +618,8 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
                 {currentQuestion.options.map((option, index) => (
                   <button
                     key={index}
-                    onClick={() => !hasAnswered && submitAnswer(index)}
-                    disabled={hasAnswered || timeRemaining === 0}
+                    onClick={() => !hasAnswered && !loading && submitAnswer(index)}
+                    disabled={hasAnswered || timeRemaining === 0 || loading}
                     className={`p-4 sm:p-6 text-left transition-all duration-300 font-mono font-bold text-lg border-2 ${
                       hasAnswered
                         ? selectedAnswer === index
@@ -702,7 +630,7 @@ export const ParticipantQuiz: React.FC<ParticipantQuizProps> = ({
                           ? 'bg-green-500/20 border-green-400 text-green-300'
                           : 'bg-gray-800/50 border-gray-600 text-gray-400'
                         : 'bg-black border-gray-600 text-white hover:border-cyan-400 hover:bg-cyan-400/10 cursor-pointer transform hover:scale-105'
-                    } ${timeRemaining === 0 ? 'cursor-not-allowed' : ''}`}
+                    } ${timeRemaining === 0 || loading ? 'cursor-not-allowed' : ''}`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4 flex-1">

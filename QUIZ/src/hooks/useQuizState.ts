@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { QuizState, Participant, Question, QuizSettings, ParticipantAnswer } from '../types';
+import { debounce } from 'lodash';
 
 const STORAGE_KEY = 'quiz-state';
 
@@ -14,178 +15,219 @@ const defaultSettings: QuizSettings = {
   allowLateJoining: true,
   shuffleQuestions: false,
   shuffleAnswers: false,
+  maxParticipants: 100,
+  requireApproval: false,
 };
 
-const initialState: QuizState = {
-  questions: [],
-  currentQuestionIndex: -1,
-  isActive: false,
-  isFinished: false,
-  participants: [],
-  showResults: false,
-  quizSettings: defaultSettings,
-  statistics: {
-    totalParticipants: 0,
-    averageScore: 0,
-    questionsAnswered: 0,
-    averageTimePerQuestion: 0,
-    participationRate: 0,
-  },
-};
+// Debounced version of localStorage.setItem
+const saveToLocalStorage = debounce((state: QuizState) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}, 500);
 
 export const useQuizState = () => {
-  const [quizState, setQuizState] = useState<QuizState>(initialState);
+  // Split state into smaller, more focused pieces
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(-1);
+  const [isActive, setIsActive] = useState(false);
+  const [isFinished, setIsFinished] = useState(false);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [showResults, setShowResults] = useState(false);
+  const [quizSettings, setQuizSettingsState] = useState<QuizSettings>(defaultSettings);
 
+  // Load state from localStorage on mount
   useEffect(() => {
     const savedState = localStorage.getItem(STORAGE_KEY);
     if (savedState) {
       try {
         const parsed = JSON.parse(savedState);
-        setQuizState({ ...initialState, ...parsed });
+        if (parsed.questions) setQuestions(parsed.questions);
+        if (parsed.currentQuestionIndex !== undefined) setCurrentQuestionIndex(parsed.currentQuestionIndex);
+        if (parsed.isActive !== undefined) setIsActive(parsed.isActive);
+        if (parsed.isFinished !== undefined) setIsFinished(parsed.isFinished);
+        if (parsed.participants) setParticipants(parsed.participants);
+        if (parsed.showResults !== undefined) setShowResults(parsed.showResults);
+        if (parsed.quizSettings) setQuizSettingsState(parsed.quizSettings);
       } catch (error) {
         console.error('Error parsing saved quiz state:', error);
       }
     }
   }, []);
 
+  // Helper function to calculate statistics - moved to top to avoid usage before declaration
+  const calculateStatistics = useCallback((participants: Participant[], totalQuestions: number): QuizStatistics => {
+    const totalParticipants = participants.length;
+    const totalScore = participants.reduce((sum, p) => sum + p.score, 0);
+    const averageScore = totalParticipants > 0 ? totalScore / totalParticipants : 0;
+    const questionsAnswered = participants.reduce((sum, p) => sum + Object.keys(p.answers).length, 0);
+    
+    // Calculate completion rate based on how many questions have been answered by participants
+    const totalPossibleAnswers = totalParticipants * totalQuestions;
+    const completionRate = totalPossibleAnswers > 0 
+      ? (questionsAnswered / totalPossibleAnswers) * 100 
+      : 0;
+    
+    return {
+      totalParticipants,
+      averageScore,
+      questionsAnswered,
+      averageTimePerQuestion: 0, // This would need to be calculated based on actual timing data
+      participationRate: totalParticipants > 0 ? (questionsAnswered / (totalParticipants * Math.max(1, totalQuestions))) * 100 : 0,
+      completionRate,
+    };
+  }, []);
+
+  // Save state to localStorage when it changes
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(quizState));
-  }, [quizState]);
+    const state: QuizState = {
+      questions,
+      currentQuestionIndex,
+      isActive,
+      isFinished,
+      participants,
+      showResults,
+      quizSettings,
+      statistics: calculateStatistics(participants, questions.length),
+    };
+    saveToLocalStorage(state);
+  }, [questions, currentQuestionIndex, isActive, isFinished, participants, showResults, quizSettings, calculateStatistics]);
 
-  const updateQuizState = (newState: Partial<QuizState>) => {
-    setQuizState(prev => ({ ...prev, ...newState }));
-  };
+  // Memoized full state to prevent unnecessary re-renders
+  const quizState = useMemo<QuizState>(() => ({
+    questions,
+    currentQuestionIndex,
+    isActive,
+    isFinished,
+    participants,
+    showResults,
+    quizSettings,
+    statistics: calculateStatistics(participants, questions.length),
+  }), [questions, currentQuestionIndex, isActive, isFinished, participants, showResults, quizSettings]);
 
-  const updateQuizSettings = (newSettings: Partial<QuizSettings>) => {
-    setQuizState(prev => ({
+  // Update multiple state properties at once
+  const updateQuizState = useCallback((newState: Partial<QuizState>) => {
+    if (newState.questions !== undefined) setQuestions(newState.questions);
+    if (newState.currentQuestionIndex !== undefined) setCurrentQuestionIndex(newState.currentQuestionIndex);
+    if (newState.isActive !== undefined) setIsActive(newState.isActive);
+    if (newState.isFinished !== undefined) setIsFinished(newState.isFinished);
+    if (newState.participants !== undefined) setParticipants(newState.participants);
+    if (newState.showResults !== undefined) setShowResults(newState.showResults);
+    if (newState.quizSettings !== undefined) setQuizSettingsState(newState.quizSettings);
+  }, []);
+
+
+
+  const updateQuizSettings = useCallback((newSettings: Partial<QuizSettings>) => {
+    setQuizSettingsState(prev => ({
       ...prev,
-      quizSettings: { ...prev.quizSettings, ...newSettings }
+      ...newSettings
     }));
-  };
+  }, []);
 
-  const addParticipant = (name: string): string => {
+  const addParticipant = useCallback((name: string, mobile: string = ''): string => {
     const id = Date.now().toString();
+    const now = new Date().toISOString();
     const participant: Participant = {
       id,
       name,
+      mobile,
       score: 0,
       answers: {},
       joinedAt: Date.now(),
       streak: 0,
       badges: [],
+      lastSeen: now,
     };
     
-    setQuizState(prev => ({
-      ...prev,
-      participants: [...prev.participants, participant],
-      statistics: {
-        ...prev.statistics,
-        totalParticipants: prev.participants.length + 1,
-      }
-    }));
-    
+    setParticipants(prev => [...prev, participant]);
     return id;
-  };
+  }, []);
 
-  const calculatePoints = (isCorrect: boolean, timeToAnswer: number, timeLimit: number, basePoints: number, streak: number): number => {
+  const calculatePoints = useCallback((isCorrect: boolean, timeToAnswer: number, timeLimit: number, basePoints: number, streak: number, settings: QuizSettings): number => {
     if (!isCorrect) return 0;
     
     let points = basePoints;
     
     // Speed bonus
-    if (quizState.quizSettings.speedBonus) {
+    if (settings.speedBonus) {
       const speedMultiplier = Math.max(0.5, 1 - (timeToAnswer / timeLimit) * 0.5);
       points *= speedMultiplier;
     }
     
     // Streak bonus
-    if (quizState.quizSettings.streakBonus && streak > 1) {
+    if (settings.streakBonus && streak > 1) {
       points *= Math.min(2, 1 + (streak - 1) * 0.1);
     }
     
     return Math.round(points);
-  };
+  }, []);
 
-  const submitAnswer = (participantId: string, questionId: string, answerIndex: number, timeToAnswer: number) => {
-    setQuizState(prev => {
-      const participants = prev.participants.map(p => {
-        if (p.id === participantId) {
-          const question = prev.questions.find(q => q.id === questionId);
-          const isCorrect = question ? question.correctAnswer === answerIndex : false;
-          const basePoints = question?.points || prev.quizSettings.pointsPerQuestion;
-          const timeLimit = question?.timeLimit || prev.quizSettings.defaultTimeLimit;
-          
-          const newStreak = isCorrect ? p.streak + 1 : 0;
-          const pointsEarned = calculatePoints(isCorrect, timeToAnswer, timeLimit, basePoints, p.streak);
-          
-          const answer: ParticipantAnswer = {
-            answerIndex,
-            timeToAnswer,
-            isCorrect,
-            pointsEarned,
-          };
-          
-          // Award badges
-          const newBadges = [...p.badges];
-          if (newStreak === 3 && !newBadges.includes('streak-3')) {
-            newBadges.push('streak-3');
-          }
-          if (newStreak === 5 && !newBadges.includes('streak-5')) {
-            newBadges.push('streak-5');
-          }
-          if (timeToAnswer < 5 && isCorrect && !newBadges.includes('speed-demon')) {
-            newBadges.push('speed-demon');
-          }
-          
-          return {
-            ...p,
-            answers: { ...p.answers, [questionId]: answer },
-            score: p.score + pointsEarned,
-            streak: newStreak,
-            badges: newBadges,
-          };
+  const submitAnswer = useCallback((participantId: string, questionId: string, answerIndex: number, timeToAnswer: number) => {
+    setParticipants(prevParticipants => {
+      return prevParticipants.map(p => {
+        if (p.id !== participantId) return p;
+        
+        const question = questions.find(q => q.id === questionId);
+        const isCorrect = question ? question.correctAnswer === answerIndex : false;
+        const basePoints = question?.points || quizSettings.pointsPerQuestion;
+        const timeLimit = question?.timeLimit || quizSettings.defaultTimeLimit;
+        
+        const newStreak = isCorrect ? p.streak + 1 : 0;
+        const pointsEarned = calculatePoints(isCorrect, timeToAnswer, timeLimit, basePoints, p.streak, quizSettings);
+        
+        const answer: ParticipantAnswer = {
+          answerIndex,
+          timeToAnswer,
+          isCorrect,
+          pointsEarned,
+          answeredAt: new Date().toISOString(),
+        };
+        
+        // Award badges
+        const newBadges = [...p.badges];
+        if (newStreak === 3 && !newBadges.includes('streak-3')) {
+          newBadges.push('streak-3');
         }
-        return p;
+        if (newStreak === 5 && !newBadges.includes('streak-5')) {
+          newBadges.push('streak-5');
+        }
+        if (timeToAnswer < 5 && isCorrect && !newBadges.includes('speed-demon')) {
+          newBadges.push('speed-demon');
+        }
+        
+        return {
+          ...p,
+          answers: { ...p.answers, [questionId]: answer },
+          score: p.score + pointsEarned,
+          streak: newStreak,
+          badges: newBadges,
+        };
       });
-      
-      // Update statistics
-      const answeredCount = participants.reduce((acc, p) => acc + Object.keys(p.answers).length, 0);
-      const totalScore = participants.reduce((acc, p) => acc + p.score, 0);
-      const averageScore = participants.length > 0 ? totalScore / participants.length : 0;
-      
-      return {
-        ...prev,
-        participants,
-        statistics: {
-          ...prev.statistics,
-          averageScore,
-          questionsAnswered: answeredCount,
-          participationRate: participants.length > 0 ? (answeredCount / (participants.length * prev.questions.length)) * 100 : 0,
-        }
-      };
     });
-  };
+  }, [questions, quizSettings, calculatePoints]);
 
-  const startQuestion = (questionIndex: number) => {
-    setQuizState(prev => ({
-      ...prev,
-      currentQuestionIndex: questionIndex,
-      currentQuestionStartTime: Date.now(),
-      showResults: false,
-    }));
-  };
+  const startQuestion = useCallback((questionIndex: number) => {
+    setCurrentQuestionIndex(questionIndex);
+    setShowResults(false);
+    // Note: currentQuestionStartTime is now managed separately if needed
+  }, []);
 
-  const resetQuiz = () => {
-    setQuizState(initialState);
+  const resetQuiz = useCallback(() => {
+    setQuestions([]);
+    setCurrentQuestionIndex(-1);
+    setIsActive(false);
+    setIsFinished(false);
+    setParticipants([]);
+    setShowResults(false);
+    setQuizSettingsState(defaultSettings);
     localStorage.removeItem(STORAGE_KEY);
-  };
+  }, []);
 
-  const exportResults = () => {
+  const exportResults = useCallback(() => {
     const results = {
-      quiz: quizState.quizSettings,
-      participants: quizState.participants,
-      questions: quizState.questions,
-      statistics: quizState.statistics,
+      quiz: quizSettings,
+      participants,
+      questions,
+      statistics: calculateStatistics(participants, questions.length),
       exportedAt: new Date().toISOString(),
     };
     
@@ -196,9 +238,10 @@ export const useQuizState = () => {
     a.download = `quiz-results-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-  };
+  }, [participants, questions, quizSettings, calculateStatistics]);
 
-  return {
+  // Memoize the API to prevent unnecessary re-renders
+  const api = useMemo(() => ({
     quizState,
     updateQuizState,
     updateQuizSettings,
@@ -207,5 +250,16 @@ export const useQuizState = () => {
     startQuestion,
     resetQuiz,
     exportResults,
-  };
+  }), [
+    quizState,
+    updateQuizState,
+    updateQuizSettings,
+    addParticipant,
+    submitAnswer,
+    startQuestion,
+    resetQuiz,
+    exportResults,
+  ]);
+
+  return api;
 };

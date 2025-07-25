@@ -1,17 +1,42 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LandingPage } from './components/LandingPage';
 import { ParticipantLogin } from './components/ParticipantLogin';
 import { ParticipantQuiz } from './components/ParticipantQuiz';
+import { ParticipantQuizOptimized } from './components/ParticipantQuizOptimized';
 import { HostDashboard } from './components/HostDashboard';
+import { HostDashboardOptimized } from './components/HostDashboardOptimized';
 import { BigScreenDisplay } from './components/BigScreenDisplay';
+import { BigScreenDisplayOptimized } from './components/BigScreenDisplayOptimized';
 import { LiveQuizDashboard } from './components/LiveQuizDashboard';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useQuizTemplates } from './hooks/useQuizTemplates';
 import { supabase } from './lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
 
+
+// Simple host authentication function
+const requireHostAuth = (sessionId: string): boolean => {
+  const hostAuth = sessionStorage.getItem('host_auth');
+  const lastHostSession = sessionStorage.getItem('last_host_session');
+  
+  // If no auth or different session, require password
+  if (!hostAuth || lastHostSession !== sessionId) {
+    const hostPassword = prompt('🔐 HOST ACCESS REQUIRED\nEnter password to continue:');
+    if (hostPassword !== 'purplehat2024') {
+      alert('❌ INVALID PASSWORD\nAccess denied. Redirecting to home.');
+      window.location.href = '/';
+      return false;
+    }
+    // Save auth for this session only
+    sessionStorage.setItem('host_auth', 'true');
+    sessionStorage.setItem('last_host_session', sessionId);
+  }
+  return true;
+};
+
 type AppState = 
   | { type: 'landing' }
-  | { type: 'participant-login' }
+  | { type: 'participant-login'; directSessionId?: string }
   | { type: 'participant-quiz'; sessionId: string; participantId: string; participantName: string; participantMobile: string }
   | { type: 'host-dashboard'; sessionId: string; displayCode: string; hostId: string }
   | { type: 'live-quiz-dashboard'; hostId: string }
@@ -34,6 +59,24 @@ function App() {
   const [appState, setAppState] = useState<AppState>({ type: 'landing' });
   const { createSessionFromTemplate, generateReadableSessionId } = useQuizTemplates('');
   const [isInitialized, setIsInitialized] = useState(false);
+  
+  // Prevent app reinitialization on state changes
+  const stateRef = useRef(appState);
+  stateRef.current = appState;
+
+  // Check URL for direct quiz join on app load (with stability check)
+  useEffect(() => {
+    if (!isInitialized || appState.type !== 'landing') return; // Wait for initialization and only on landing
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const joinSessionId = urlParams.get('join');
+    
+    if (joinSessionId) {
+      // Auto-open participant login with pre-filled session
+      console.log('🔗 [APP] Direct join detected:', joinSessionId);
+      setAppState({ type: 'participant-login', directSessionId: joinSessionId });
+    }
+  }, [isInitialized]); // Only depend on isInitialized, not appState.type
 
   // Save participant session to localStorage
   const saveParticipantSession = (session: ParticipantSession) => {
@@ -73,9 +116,16 @@ function App() {
     console.log('💾 [SESSION] Participant session cleared');
   };
 
-  // Handle client-side routing for big screen URLs
+  // Handle client-side routing - ONLY RUN ONCE with lock
   useEffect(() => {
     if (isInitialized) return; // Prevent multiple initializations
+    
+    // Additional lock to prevent double initialization
+    const initLock = sessionStorage.getItem('app_initializing');
+    if (initLock) return;
+    
+    sessionStorage.setItem('app_initializing', 'true');
+    console.log('🔄 [APP] One-time initialization starting...');
     
     const path = window.location.pathname;
     const search = window.location.search;
@@ -83,24 +133,36 @@ function App() {
     
     console.log('🔍 [APP] Initializing routing - Path:', path, 'Search:', search);
     
-    // Check for big screen routing first
+    // Check for big screen routing first - FIXED to handle both patterns
     if (path.startsWith('/big-screen/')) {
       const accessCode = path.split('/big-screen/')[1];
       console.log('🎮 [APP] Big screen code detected:', accessCode);
       if (accessCode) {
         setAppState({ type: 'big-screen', accessCode });
         setIsInitialized(true);
+        sessionStorage.removeItem('app_initializing');
         return;
       }
     }
     
-    // Also check URL parameters for access code
+    // Check URL parameters for access code (for ?code= pattern)
     const urlParams = new URLSearchParams(search);
     const accessCodeParam = urlParams.get('code');
     if (accessCodeParam) {
       console.log('🎮 [APP] Big screen code detected in params:', accessCodeParam);
       setAppState({ type: 'big-screen', accessCode: accessCodeParam });
       setIsInitialized(true);
+      sessionStorage.removeItem('app_initializing');
+      return;
+    }
+
+    // FIXED: Check for big screen routing using display code pattern
+    const displayCodeParam = urlParams.get('display');
+    if (displayCodeParam) {
+      console.log('🎮 [APP] Big screen display code detected:', displayCodeParam);
+      setAppState({ type: 'big-screen', accessCode: displayCodeParam });
+      setIsInitialized(true);
+      sessionStorage.removeItem('app_initializing');
       return;
     }
 
@@ -126,16 +188,83 @@ function App() {
       }
     }
     
+    // Handle /host/sessionId URLs
+    if (path.startsWith('/host/')) {
+      const sessionId = path.split('/host/')[1];
+      if (sessionId) {
+        console.log('🔗 [APP] Host URL detected:', sessionId);
+        // Check authentication
+        const hostAuth = sessionStorage.getItem('host_authenticated');
+        if (!hostAuth) {
+          const hostPassword = prompt('🔐 HOST ACCESS REQUIRED\nEnter password to continue:');
+          if (hostPassword !== 'purplehat2024') {
+            alert('❌ INVALID PASSWORD\nRedirecting to home.');
+            window.location.href = '/';
+            return;
+          }
+          sessionStorage.setItem('host_authenticated', 'true');
+        }
+        
+        const hostId = uuidv4();
+        setAppState({ 
+          type: 'host-dashboard', 
+          sessionId, 
+          displayCode: 'LOADING...',
+          hostId 
+        });
+        setIsInitialized(true);
+        
+        // Clear initialization lock
+        sessionStorage.removeItem('app_initializing');
+        return;
+      }
+    }
+    
     // Default to landing page
+    console.log('🏠 [APP] Defaulting to landing page');
     setAppState({ type: 'landing' });
     setIsInitialized(true);
-  }, []);
+    
+    // Clear initialization lock
+    sessionStorage.removeItem('app_initializing');
+  }, []); // Empty dependency array - run only once
+  
+  // Prevent re-initialization on app state changes
+  useEffect(() => {
+    if (!isInitialized) return;
+    console.log('🔍 [APP] State changed to:', appState.type);
+    // Update URL without causing re-initialization
+    if (appState.type === 'host-dashboard' && 'sessionId' in appState) {
+      const newUrl = `/host/${appState.sessionId}`;
+      if (window.location.pathname !== newUrl) {
+        window.history.pushState({}, '', newUrl);
+      }
+    } else if (appState.type === 'landing') {
+      if (window.location.pathname !== '/') {
+        window.history.pushState({}, '', '/');
+      }
+    }
+  }, [appState, isInitialized]);
 
   const handleSelectRole = (role: 'host' | 'participant') => {
     if (role === 'host') {
+      // SINGLE PASSWORD CHECK - authenticate ONCE for entire host session
+      const hostAuth = sessionStorage.getItem('host_authenticated');
+      
+      if (!hostAuth) {
+        const hostPassword = prompt('🔐 HOST ACCESS REQUIRED\nEnter password to continue:');
+        if (hostPassword !== 'purplehat2024') {
+          alert('❌ INVALID PASSWORD\nAccess denied.');
+          return;
+        }
+        // Save authentication for entire session
+        sessionStorage.setItem('host_authenticated', 'true');
+      }
+      
       const hostId = uuidv4();
       setAppState({ type: 'live-quiz-dashboard', hostId });
     } else {
+      // Participants get direct access - NO PASSWORD
       setAppState({ type: 'participant-login' });
     }
   };
@@ -154,13 +283,14 @@ function App() {
       }
 
       // Check if participant with this name and mobile already exists
-      const { data: existingParticipant, error: participantError } = await supabase
+      const { data: existingParticipants, error: participantError } = await supabase
         .from('quiz_participants')
         .select('*')
         .eq('quiz_session_id', session.id)
         .eq('name', name)
-        .eq('mobile', mobile)
-        .single();
+        .eq('mobile', mobile);
+
+      const existingParticipant = existingParticipants?.[0];
 
       let participantId: string;
 
@@ -179,10 +309,11 @@ function App() {
           .from('quiz_participants')
           .select('*')
           .eq('quiz_session_id', session.id)
-          .eq('name', name)
-          .neq('mobile', mobile);
+          .eq('name', name);
 
-        if (nameCheck && nameCheck.length > 0) {
+        const nameTakenByOther = nameCheck?.find(p => p.mobile !== mobile);
+
+        if (nameTakenByOther) {
           throw new Error('This name is already taken by another participant. Please choose a different name.');
         }
 
@@ -267,6 +398,8 @@ function App() {
         throw error;
       }
 
+      // Authentication already done in handleSelectRole - NO DUPLICATE CHECK
+      
       setAppState({ 
         type: 'host-dashboard', 
         sessionId: session.id, 
@@ -280,6 +413,8 @@ function App() {
   };
 
   const handleSelectQuiz = (quizId: string, accessCode: string) => {
+    // Authentication already done in handleSelectRole - NO DUPLICATE CHECK
+    
     // Extract hostId from the quiz or generate a new one
     const hostId = uuidv4(); // In a real app, this would come from authentication
     setAppState({ 
@@ -303,6 +438,8 @@ function App() {
       .single();
 
     if (session) {
+      // Authentication already done in handleSelectRole - NO DUPLICATE CHECK
+      
       setAppState({ 
         type: 'host-dashboard', 
         sessionId, 
@@ -327,58 +464,65 @@ function App() {
     clearParticipantSession();
     setAppState({ type: 'landing' });
   };
-  switch (appState.type) {
-    case 'landing':
-      return <LandingPage onSelectRole={handleSelectRole} />;
-    
-    case 'participant-login':
-      return (
-        <ParticipantLogin 
-          onJoin={handleParticipantJoin}
-          onBack={handleBackToHome}
-        />
-      );
-    
-    case 'participant-quiz':
-      return (
-        <ParticipantQuiz 
-          sessionId={appState.sessionId}
-          participantId={appState.participantId}
-          participantName={appState.participantName}
-          participantMobile={appState.participantMobile}
-          onBack={handleParticipantBack}
-        />
-      );
-    
-    case 'host-dashboard':
-      return (
-        <HostDashboard 
-          sessionId={appState.sessionId}
-          displayCode={appState.displayCode}
-          hostId={appState.hostId}
-          onBack={() => handleBackToLiveDashboard(appState.hostId)}
-        />
-      );
-    
-    case 'live-quiz-dashboard':
-      return (
-        <LiveQuizDashboard 
-          onSelectQuiz={handleSelectQuiz}
-          onCreateNew={handleCreateNewQuiz}
-          onBack={handleBackToHome}
-        />
-      );
-    
-    case 'big-screen':
-      return (
-        <BigScreenDisplay 
-          accessCode={appState.accessCode}
-        />
-      );
-    
-    default:
-      return <LandingPage onSelectRole={handleSelectRole} />;
-  }
+  return (
+    <ErrorBoundary>
+      {(() => {
+        switch (appState.type) {
+          case 'landing':
+            return <LandingPage onSelectRole={handleSelectRole} />;
+          
+          case 'participant-login':
+            return (
+              <ParticipantLogin 
+                onJoin={handleParticipantJoin}
+                onBack={handleBackToHome}
+                directSessionId={appState.directSessionId}
+              />
+            );
+          
+          case 'participant-quiz':
+            return (
+              <ParticipantQuizOptimized 
+                sessionId={appState.sessionId}
+                participantId={appState.participantId}
+                participantName={appState.participantName}
+                participantMobile={appState.participantMobile}
+                onBack={handleParticipantBack}
+              />
+            );
+          
+          case 'host-dashboard':
+            return (
+              <HostDashboardOptimized 
+                sessionId={appState.sessionId}
+                displayCode={appState.displayCode}
+                hostId={appState.hostId}
+                onBack={() => handleBackToLiveDashboard(appState.hostId)}
+              />
+            );
+          
+          case 'live-quiz-dashboard':
+            return (
+              <LiveQuizDashboard 
+                onSelectQuiz={handleSelectQuiz}
+                onCreateNew={handleCreateNewQuiz}
+                onBack={handleBackToHome}
+              />
+            );
+          
+          case 'big-screen':
+            return (
+              <BigScreenDisplayOptimized 
+                accessCode={appState.accessCode}
+              />
+            );
+          
+          default:
+            return <LandingPage onSelectRole={handleSelectRole} />;
+        }
+      })()}
+    </ErrorBoundary>
+  );
 }
 
 export default App;

@@ -40,66 +40,24 @@ export const LiveQuizDashboard: React.FC<LiveQuizDashboardProps> = ({
     try {
       setError(null);
       
-      // Get all active quizzes with analytics
+      // SIMPLIFIED: Get basic quiz info only - NO ANALYTICS to prevent API flooding
       const { data: quizzes, error: quizzesError } = await supabase
         .from('quiz_sessions')
-        .select(`
-          *,
-          quiz_participants(count),
-          quiz_questions(count)
-        `)
+        .select('*')
         .eq('is_active', true)
-        .order('updated_at', { ascending: false });
+        .order('updated_at', { ascending: false })
+        .limit(20); // Limit results
 
       if (quizzesError) throw quizzesError;
 
-      // Get participant analytics for each quiz
-      const quizzesWithAnalytics: LiveQuiz[] = await Promise.all(
-        (quizzes || []).map(async (quiz) => {
-          // Get participant scores
-          const { data: participants, error: participantsError } = await supabase
-            .from('quiz_participants')
-            .select('score')
-            .eq('quiz_session_id', quiz.id);
-
-          if (participantsError) {
-            console.warn('Failed to load participant data:', participantsError);
-          }
-
-          const participantCount = quiz.quiz_participants?.[0]?.count || 0;
-          const questionCount = quiz.quiz_questions?.[0]?.count || 0;
-          const scores = participants?.map(p => p.score) || [];
-          const averageScore = scores.length > 0 ? scores.reduce((sum, score) => sum + score, 0) / scores.length : 0;
-          
-          // Calculate completion rate (participants who answered all questions)
-          const { data: answers, error: answersError } = await supabase
-            .from('quiz_answers')
-            .select('participant_id')
-            .eq('quiz_session_id', quiz.id);
-
-          let completionRate = 0;
-          if (!answersError && answers && participantCount > 0 && questionCount > 0) {
-            const participantAnswerCounts = answers.reduce((acc, answer) => {
-              acc[answer.participant_id] = (acc[answer.participant_id] || 0) + 1;
-              return acc;
-            }, {} as Record<string, number>);
-            
-            const completedParticipants = Object.values(participantAnswerCounts).filter(
-              count => count === questionCount
-            ).length;
-            
-            completionRate = (completedParticipants / participantCount) * 100;
-          }
-
-          return {
-            ...quiz,
-            participant_count: participantCount,
-            question_count: questionCount,
-            average_score: Math.round(averageScore),
-            completion_rate: Math.round(completionRate),
-          };
-        })
-      );
+      // Basic quiz list with minimal processing
+      const quizzesWithAnalytics: LiveQuiz[] = (quizzes || []).map((quiz) => ({
+        ...quiz,
+        participant_count: 0, // Will be loaded on-demand
+        question_count: 0,    // Will be loaded on-demand
+        average_score: 0,     // Will be loaded on-demand
+        completion_rate: 0,   // Will be loaded on-demand
+      }));
 
       setLiveQuizzes(quizzesWithAnalytics);
     } catch (err) {
@@ -113,12 +71,12 @@ export const LiveQuizDashboard: React.FC<LiveQuizDashboardProps> = ({
   useEffect(() => {
     loadLiveQuizzes();
     
-    // Set up auto-refresh every 10 seconds
-    const interval = setInterval(loadLiveQuizzes, 10000);
-    setRefreshInterval(interval);
+    // DISABLED: Stop API flooding - refresh only on user action
+    // const interval = setInterval(loadLiveQuizzes, 10000);
+    // setRefreshInterval(interval);
     
     return () => {
-      if (interval) clearInterval(interval);
+      // Cleanup removed since auto-refresh is disabled
     };
   }, []);
 

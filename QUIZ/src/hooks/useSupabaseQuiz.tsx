@@ -3,6 +3,10 @@ import { supabase } from '../lib/supabase';
 import { Question, QuizState, QuizSettings, Participant } from '../types';
 import { unifiedSync, QuizStateUpdate } from '../lib/realtimeSync';
 
+// Add simple caching to prevent redundant API calls
+const quizDataCache = new Map<string, { data: QuizState; timestamp: number }>();
+const CACHE_DURATION = 5000; // 5 seconds
+
 export const useSupabaseQuiz = (sessionId: string) => {
   // Skip hook execution if sessionId is invalid
   const shouldSkip = !sessionId || sessionId === 'skip' || sessionId === '';
@@ -43,8 +47,10 @@ export const useSupabaseQuiz = (sessionId: string) => {
   const [quizState, setQuizState] = useState<QuizState>(quizStateRef.current);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadingRef = useRef(false);
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Update state function
+  // Update state function with loading management
   const updateQuizState = useCallback((newState: QuizState) => {
     console.log('🎯 [QUIZ] UPDATING STATE:', {
       currentQuestionIndex: newState.currentQuestionIndex,
@@ -55,14 +61,32 @@ export const useSupabaseQuiz = (sessionId: string) => {
     
     quizStateRef.current = newState;
     setQuizState(newState);
+    setError(null); // Clear any previous errors on successful update
   }, []);
 
-  // Load initial quiz data
+  // Load initial quiz data with better loading management
   const loadQuizData = useCallback(async (retryCount = 0) => {
-    if (shouldSkip) return;
+    if (shouldSkip || loadingRef.current) return;
+    
+    // Prevent multiple calls by debouncing
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+    }
+    
+    // Check cache first
+    const cached = quizDataCache.get(sessionId);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      console.log('📊 [QUIZ] Using cached data for session:', sessionId);
+      updateQuizState(cached.data);
+      return;
+    }
     
     try {
+      loadingRef.current = true;
+      setLoading(true);
       console.log('📊 [QUIZ] Loading quiz data for session:', sessionId);
+
+      // Removed aggressive loading timeout that was causing "Query timeout" errors
       
       // Load quiz session
       const { data: session, error: sessionError } = await supabase
@@ -82,33 +106,37 @@ export const useSupabaseQuiz = (sessionId: string) => {
       });
 
       console.log('🔍 [QUIZ] RAW SESSION DATA:', session);
-      // Load questions
-      const { data: questions, error: questionsError } = await supabase
-        .from('quiz_questions')
-        .select('*')
-        .eq('quiz_session_id', sessionId)
-        .order('order_index');
+      
+      // Load data with better error handling (timeout removed)
 
-      if (questionsError) throw questionsError;
+      // OPTIMIZED: Load only essential data for faster performance
+      const [questionsResult, participantsResult] = await Promise.all([
+        supabase
+          .from('quiz_questions')
+          .select('id, question, options, correct_answer, time_limit, points, category, difficulty, order_index, image_url, option_images')
+          .eq('quiz_session_id', sessionId)
+          .order('order_index', { ascending: true })
+          .limit(20), // Much smaller for faster loading
+        supabase
+          .from('quiz_participants')
+          .select('id, name, mobile, score, streak, badges, avatar_color, joined_at, last_seen')
+          .eq('quiz_session_id', sessionId)
+          .order('score', { ascending: false })
+          .limit(50) // Reduced for performance
+      ]);
 
-      // Load participants
-      const { data: participants, error: participantsError } = await supabase
-        .from('quiz_participants')
-        .select('*')
-        .eq('quiz_session_id', sessionId);
+      // Results already destructured above
 
-      if (participantsError) throw participantsError;
+      // Handle errors more gracefully
+      const questions = questionsResult.error ? [] : (questionsResult.data || []);
+      const participants = participantsResult.error ? [] : (participantsResult.data || []);
 
-      // Load answers
-      const { data: answers, error: answersError } = await supabase
-        .from('quiz_answers')
-        .select('*')
-        .eq('quiz_session_id', sessionId);
+      // Log any sub-query errors but don't fail completely
+      if (questionsResult.error) console.warn('Questions load error:', questionsResult.error);
+      if (participantsResult.error) console.warn('Participants load error:', participantsResult.error);
 
-      if (answersError) throw answersError;
-
-      // Process participants with their answers
-      const processedParticipants: Participant[] = (participants || []).map(p => ({
+      // OPTIMIZED: Process participants without loading all answers (for speed)
+      const processedParticipants: Participant[] = (participants || []).map((p: any) => ({
         id: p.id,
         name: p.name,
         mobile: p.mobile,
@@ -118,21 +146,10 @@ export const useSupabaseQuiz = (sessionId: string) => {
         avatarColor: p.avatar_color || 'bg-gradient-to-r from-blue-400 to-purple-400',
         joinedAt: new Date(p.joined_at).getTime(),
         lastSeen: p.last_seen,
-        answers: (answers || [])
-          .filter(a => a.participant_id === p.id)
-          .reduce((acc, answer) => {
-            acc[answer.question_id] = {
-              answerIndex: answer.answer_index,
-              isCorrect: answer.is_correct,
-              timeToAnswer: parseFloat(answer.time_to_answer),
-              pointsEarned: answer.points_earned || 0,
-              answeredAt: answer.answered_at,
-            };
-            return acc;
-          }, {} as Record<string, any>),
+        answers: {} // Load answers separately when needed for performance
       }));
 
-      const processedQuestions: Question[] = (questions || []).map(q => ({
+      const processedQuestions: Question[] = (questions || []).map((q: any) => ({
         id: q.id,
         question: q.question,
         options: q.options,
@@ -156,7 +173,7 @@ export const useSupabaseQuiz = (sessionId: string) => {
         isFinished: session.is_finished || false,
         showResults: session.show_results || false,
         quizSettings: {
-          title: session.title,
+          title: session.title || 'New Quiz',
           description: session.description || '',
           defaultTimeLimit: 30,
           pointsPerQuestion: 100,
@@ -193,124 +210,88 @@ export const useSupabaseQuiz = (sessionId: string) => {
         questionsCount: newState.questions.length
       });
 
+      // Cache the data
+      quizDataCache.set(sessionId, { data: newState, timestamp: Date.now() });
+
       updateQuizState(newState);
 
     } catch (err) {
       console.error('❌ [QUIZ] Error loading quiz data:', err);
       
-      // Retry logic for network errors
-      if (retryCount < 3 && err instanceof Error && err.message.includes('Failed to fetch')) {
+      // More robust retry logic
+      const isNetworkError = err instanceof Error && (
+        err.message.includes('Failed to fetch') || 
+        err.message.includes('network') ||
+        err.message.includes('NetworkError') ||
+        err.name === 'TypeError'
+      );
+      
+      if (retryCount < 3 && isNetworkError) {
         console.log(`🔄 [QUIZ] Retrying loadQuizData (attempt ${retryCount + 1}/3)`);
         setTimeout(() => loadQuizData(retryCount + 1), 1000 * (retryCount + 1));
         return;
       }
       
-      setError(err instanceof Error ? err.message : 'Failed to load quiz data');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load quiz data';
+      setError(errorMessage);
+      console.error('❌ [QUIZ] Final error after retries:', errorMessage);
+    } finally {
+      // Reset loading state
+      loadingRef.current = false;
+      setLoading(false);
     }
-  }, [sessionId, shouldSkip]);
+  }, [sessionId, shouldSkip, updateQuizState]);
 
-  // Setup real-time subscriptions
+  // Setup data loading with real-time sync (FIXED - no loops)
   useEffect(() => {
     if (shouldSkip) return;
     
-    console.log('🔄 [QUIZ] Setting up real-time subscriptions for session:', sessionId);
+    console.log('🔄 [QUIZ] Loading initial data for session:', sessionId);
     
-    // Load initial data
+    // Load data immediately
     loadQuizData();
     
-    // Create a single channel for all quiz updates
-    const channel = supabase
-      .channel(`quiz_realtime_${sessionId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'quiz_sessions',
-          filter: `id=eq.${sessionId}`
-        },
-        (payload) => {
-          console.log('🔄 [REALTIME] Session update:', payload);
-          // Immediate reload for session changes
-          loadQuizData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'quiz_participants',
-          filter: `quiz_session_id=eq.${sessionId}`
-        },
-        (payload) => {
-          console.log('👥 [REALTIME] Participants update:', payload);
-          loadQuizData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'quiz_answers',
-          filter: `quiz_session_id=eq.${sessionId}`
-        },
-        (payload) => {
-          console.log('💬 [REALTIME] Answers update:', payload);
-          loadQuizData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'quiz_questions',
-          filter: `quiz_session_id=eq.${sessionId}`
-        },
-        (payload) => {
-          console.log('❓ [REALTIME] Questions update:', payload);
-          loadQuizData();
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 [REALTIME] Subscription status:', status);
-      });
-
-    return () => {
-      console.log('🔄 [QUIZ] Cleaning up subscriptions');
-      supabase.removeChannel(channel);
-    };
-  }, [sessionId, shouldSkip, loadQuizData]);
+    // NO REAL-TIME SYNC IN HOOK - causes loops
+    // Real-time sync handled in components only
+    
+  }, [sessionId]); // Only sessionId dependency to prevent loops
 
   const addQuestion = async (questionData: Omit<Question, 'id' | 'orderIndex'>) => {
     try {
       setLoading(true);
+      setError(null);
       console.log('🔄 [QUIZ] Adding question:', questionData.question);
       
+      // OPTIMIZED: Minimal insert for faster performance
+      const insertData = {
+        quiz_session_id: sessionId,
+        question: questionData.question,
+        options: questionData.options,
+        correct_answer: questionData.correctAnswer,
+        time_limit: questionData.timeLimit,
+        points: questionData.points,
+        category: questionData.category || '',
+        difficulty: questionData.difficulty || 'medium',
+        order_index: quizStateRef.current.questions.length,
+        image_url: questionData.imageUrl || null,
+        option_images: questionData.optionImages || null
+      };
+
+      // FAST INSERT: Use minimal select for speed
       const { data, error } = await supabase
         .from('quiz_questions')
-        .insert({
-          quiz_session_id: sessionId,
-          question: questionData.question,
-          options: questionData.options,
-          correct_answer: questionData.correctAnswer,
-          time_limit: questionData.timeLimit,
-          points: questionData.points,
-          category: questionData.category,
-          difficulty: questionData.difficulty,
-          order_index: quizStateRef.current.questions.length,
-          image_url: questionData.imageUrl || null,
-        })
-        .select()
+        .insert(insertData)
+        .select('id, question, options, correct_answer, time_limit, points, category, difficulty, order_index, image_url, option_images')
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ [QUIZ] Database error adding question:', error);
+        throw error;
+      }
 
       console.log('✅ [QUIZ] Question added successfully:', data);
       
-      // Update state immediately without full reload
+      // IMMEDIATE UI UPDATE - no waiting for database reload
       const newQuestion: Question = {
         id: data.id,
         question: data.question,
@@ -322,6 +303,7 @@ export const useSupabaseQuiz = (sessionId: string) => {
         difficulty: data.difficulty as 'easy' | 'medium' | 'hard',
         orderIndex: data.order_index,
         imageUrl: data.image_url || undefined,
+        optionImages: data.option_images || undefined,
       };
       
       const newState = {
@@ -330,10 +312,17 @@ export const useSupabaseQuiz = (sessionId: string) => {
       };
       
       updateQuizState(newState);
+      
+      // Send real-time update to all participants and components
+      await unifiedSync.sendUpdate(sessionId, {
+        type: 'QUESTION_ADDED',
+        data: { questionCount: newState.questions.length }
+      });
+      
+      console.log('✅ [QUIZ] Question added with real-time sync');
     } catch (err) {
       console.error('❌ [QUIZ] Error adding question:', err);
-      // Don't throw, just log the error and reload data immediately
-      loadQuizData();
+      setError(err instanceof Error ? err.message : 'Failed to add question');
     } finally {
       setLoading(false);
     }
@@ -342,6 +331,7 @@ export const useSupabaseQuiz = (sessionId: string) => {
   const makeLive = async () => {
     try {
       setLoading(true);
+      setError(null);
       console.log('🔄 [QUIZ] Making quiz live...');
 
       const { error } = await supabase
@@ -360,8 +350,14 @@ export const useSupabaseQuiz = (sessionId: string) => {
       };
       
       updateQuizState(newState);
+      
+      // Send unified sync update
+      await unifiedSync.sendUpdate(sessionId, {
+        type: 'START_QUIZ',
+      });
     } catch (err) {
       console.error('❌ [QUIZ] Error making quiz live:', err);
+      setError(err instanceof Error ? err.message : 'Failed to make quiz live');
       throw err;
     } finally {
       setLoading(false);
@@ -371,6 +367,7 @@ export const useSupabaseQuiz = (sessionId: string) => {
   const startQuiz = async () => {
     try {
       setLoading(true);
+      setError(null);
       console.log('🔄 [QUIZ] Starting quiz...');
       
       if (quizStateRef.current.questions.length === 0) {
@@ -405,12 +402,13 @@ export const useSupabaseQuiz = (sessionId: string) => {
       updateQuizState(newState);
       
       // Send unified sync update
-      unifiedSync.sendUpdate(sessionId, {
+      await unifiedSync.sendUpdate(sessionId, {
         type: 'START_QUIZ',
         questionIndex: 0,
       });
     } catch (err) {
       console.error('❌ [QUIZ] Error starting quiz:', err);
+      setError(err instanceof Error ? err.message : 'Failed to start quiz');
       throw err;
     } finally {
       setLoading(false);
@@ -420,10 +418,10 @@ export const useSupabaseQuiz = (sessionId: string) => {
   const startQuestion = async (questionIndex: number) => {
     try {
       setLoading(true);
+      setError(null);
       console.log('🔄 [QUIZ] Starting question', questionIndex + 1);
       
       const startTime = new Date().toISOString();
-
 
       const { error } = await supabase
         .from('quiz_sessions')
@@ -449,12 +447,13 @@ export const useSupabaseQuiz = (sessionId: string) => {
       updateQuizState(newState);
       
       // Send unified sync update
-      unifiedSync.sendUpdate(sessionId, {
+      await unifiedSync.sendUpdate(sessionId, {
         type: 'START_QUESTION',
         questionIndex,
       });
     } catch (err) {
       console.error('❌ [QUIZ] Error starting question:', err);
+      setError(err instanceof Error ? err.message : 'Failed to start question');
       throw err;
     } finally {
       setLoading(false);
@@ -464,8 +463,8 @@ export const useSupabaseQuiz = (sessionId: string) => {
   const showResults = async () => {
     try {
       setLoading(true);
+      setError(null);
       console.log('🔄 [QUIZ] Showing results...');
-
 
       const { error } = await supabase
         .from('quiz_sessions')
@@ -485,11 +484,12 @@ export const useSupabaseQuiz = (sessionId: string) => {
       updateQuizState(newState);
       
       // Send unified sync update
-      unifiedSync.sendUpdate(sessionId, {
+      await unifiedSync.sendUpdate(sessionId, {
         type: 'SHOW_RESULTS',
       });
     } catch (err) {
       console.error('❌ [QUIZ] Error showing results:', err);
+      setError(err instanceof Error ? err.message : 'Failed to show results');
       throw err;
     } finally {
       setLoading(false);
@@ -499,8 +499,8 @@ export const useSupabaseQuiz = (sessionId: string) => {
   const finishQuiz = async () => {
     try {
       setLoading(true);
+      setError(null);
       console.log('🔄 [QUIZ] Finishing quiz...');
-
 
       const { error } = await supabase
         .from('quiz_sessions')
@@ -524,11 +524,12 @@ export const useSupabaseQuiz = (sessionId: string) => {
       updateQuizState(newState);
       
       // Send unified sync update
-      unifiedSync.sendUpdate(sessionId, {
+      await unifiedSync.sendUpdate(sessionId, {
         type: 'FINISH_QUIZ',
       });
     } catch (err) {
       console.error('❌ [QUIZ] Error finishing quiz:', err);
+      setError(err instanceof Error ? err.message : 'Failed to finish quiz');
       throw err;
     } finally {
       setLoading(false);
@@ -537,6 +538,8 @@ export const useSupabaseQuiz = (sessionId: string) => {
 
   const updateQuizSettings = useCallback(async (newSettings: Partial<QuizSettings>) => {
     try {
+      setLoading(true);
+      setError(null);
       const updatedSettings = { ...quizStateRef.current.quizSettings, ...newSettings };
 
       const { error } = await supabase
@@ -550,18 +553,33 @@ export const useSupabaseQuiz = (sessionId: string) => {
 
       if (error) throw error;
       
-      // Reload data after settings update immediately
-      loadQuizData();
+      // Update state immediately without triggering reload
+      const newState = {
+        ...quizStateRef.current,
+        quizSettings: updatedSettings,
+      };
+      
+      updateQuizState(newState);
+      
+      // Update cache to prevent automatic reload that causes redirects
+      quizDataCache.set(sessionId, { data: newState, timestamp: Date.now() });
+      
+      console.log('✅ [QUIZ] Settings updated without reload');
     } catch (err) {
       console.error('❌ [QUIZ] Error updating quiz settings:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update settings');
       throw err;
+    } finally {
+      setLoading(false);
     }
-  }, [sessionId, loadQuizData]);
+  }, [sessionId, updateQuizState]);
 
   // Force update function for manual data reload
   const forceUpdate = useCallback(() => {
     console.log('🔄 [QUIZ] Force update triggered');
-    loadQuizData();
+    if (!loadingRef.current) {
+      loadQuizData();
+    }
   }, [loadQuizData]);
 
   return {
