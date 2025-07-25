@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ArrowLeft, Users, Zap, Shield, Wifi, Activity, Terminal, Lock } from 'lucide-react';
 
 interface ParticipantLoginProps {
-  onJoin: (name: string, sessionId: string, mobile: string) => Promise<void>;
+  onJoin: (name: string, sessionId: string, mobile: string, institute: string) => Promise<void>;
   onBack: () => void;
   directSessionId?: string;
 }
@@ -15,12 +15,13 @@ export const ParticipantLogin: React.FC<ParticipantLoginProps> = ({
   const [name, setName] = useState('');
   const [sessionId, setSessionId] = useState(directSessionId || '');
   const [mobile, setMobile] = useState('');
+  const [institute, setInstitute] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !sessionId.trim() || !mobile.trim()) {
+    if (!name.trim() || !sessionId.trim() || !mobile.trim() || !institute.trim()) {
       setError('All fields are required');
       return;
     }
@@ -29,7 +30,7 @@ export const ParticipantLogin: React.FC<ParticipantLoginProps> = ({
     setError('');
 
     try {
-      await onJoin(name.trim(), sessionId.trim(), mobile.trim());
+      await onJoin(name.trim(), sessionId.trim(), mobile.trim(), institute.trim());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to join quiz. Please try again.');
     } finally {
@@ -111,6 +112,20 @@ export const ParticipantLogin: React.FC<ParticipantLoginProps> = ({
                 onChange={(e) => setMobile(e.target.value)}
                 className="w-full p-4 bg-black border-2 border-gray-600 focus:border-cyan-400 text-white font-mono text-lg focus:outline-none placeholder-gray-400 transition-all duration-300"
                 placeholder="Enter your mobile number..."
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-cyan-400 font-mono font-bold mb-3 uppercase tracking-wider">
+                Institute / Organization
+              </label>
+              <input
+                type="text"
+                value={institute}
+                onChange={(e) => setInstitute(e.target.value)}
+                className="w-full p-4 bg-black border-2 border-gray-600 focus:border-cyan-400 text-white font-mono text-lg focus:outline-none placeholder-gray-400 transition-all duration-300"
+                placeholder="Enter your institute or organization..."
                 required
               />
             </div>

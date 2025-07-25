@@ -269,7 +269,7 @@ function App() {
     }
   };
 
-  const handleParticipantJoin = async (name: string, sessionId: string, mobile: string) => {
+  const handleParticipantJoin = async (name: string, sessionId: string, mobile: string, institute: string) => {
     try {
       // Check if session exists and get session info
       const { data: session, error: sessionError } = await supabase
@@ -288,7 +288,8 @@ function App() {
         .select('*')
         .eq('quiz_session_id', session.id)
         .eq('name', name)
-        .eq('mobile', mobile);
+        .eq('mobile', mobile)
+        .eq('institute', institute);
 
       const existingParticipant = existingParticipants?.[0];
 
@@ -333,6 +334,7 @@ function App() {
             quiz_session_id: session.id,
             name: name,
             mobile: mobile,
+            institute: institute,
             avatar_color: avatarColors[Math.floor(Math.random() * avatarColors.length)],
           })
           .select()

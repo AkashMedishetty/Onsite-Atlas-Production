@@ -38,6 +38,7 @@ export interface DatabaseParticipant {
   quiz_session_id: string;
   name: string;
   mobile: string;
+  institute: string;
   score: number;
   streak: number;
   badges: string[];
@@ -131,6 +132,7 @@ export interface Participant {
   id: string;
   name: string;
   mobile: string;
+  institute: string;
   score: number;
   answers: Record<string, ParticipantAnswer>;
   joinedAt: number;

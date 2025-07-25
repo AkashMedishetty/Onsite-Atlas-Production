@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Download, Trophy } from 'lucide-react';
+import { Download, Trophy, FileText, Database, BarChart3, Users } from 'lucide-react';
 import { useOptimizedSupabaseQuiz } from '../hooks/useOptimizedSupabaseQuiz';
 import { TemplateManager } from './TemplateManager';
 import { QuestionManager } from './host/QuestionManager';
@@ -8,6 +8,7 @@ import { LiveLeaderboard } from './host/LiveLeaderboard';
 import { HostHeader } from './host/HostHeader';
 import { supabase } from '../lib/supabase';
 import { Question, QuizSettings } from '../types';
+import { EnhancedExportManager } from '../lib/exportUtils';
 
 interface HostDashboardOptimizedProps {
   sessionId: string;
@@ -168,24 +169,31 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
     return quizState.questions[quizState.currentQuestionIndex];
   }, [quizState.questions, quizState.currentQuestionIndex]);
 
-  const answeredCount = useMemo(() => {
-    if (!currentQuestion) return 0;
-    return quizState.participants.filter(p => p.answers[currentQuestion.id]).length;
-  }, [currentQuestion, quizState.participants]);
+  const topPerformers = useMemo(() => {
+    return [...quizState.participants]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+  }, [quizState.participants]);
 
-  // Timer for current question
+  // Initialize the enhanced export manager
+  const exportManager = useMemo(() => {
+    return new EnhancedExportManager(quizState);
+  }, [quizState]);
+
+  // Timer effect for current question
   useEffect(() => {
     if (quizState.isActive && quizState.currentQuestionStartTime && !quizState.showResults && currentQuestion) {
-      const timeLimit = (currentQuestion.timeLimit || quizState.quizSettings.defaultTimeLimit) * 1000;
+      const startTime = quizState.currentQuestionStartTime;
+      const timeLimit = (currentQuestion.timeLimit || 30) * 1000;
       
       const interval = setInterval(() => {
-        const elapsed = Date.now() - (quizState.currentQuestionStartTime || 0);
+        const elapsed = Date.now() - startTime;
         const remaining = Math.max(0, timeLimit - elapsed);
         setTimeRemaining(Math.ceil(remaining / 1000));
         
         if (remaining <= 0) {
           clearInterval(interval);
-          showResults();
+          setTimeRemaining(0);
         }
       }, 100);
 
@@ -193,7 +201,7 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
     } else {
       setTimeRemaining(null);
     }
-  }, [quizState.isActive, quizState.currentQuestionStartTime, quizState.showResults, currentQuestion, quizState.quizSettings.defaultTimeLimit, showResults]);
+  }, [quizState.currentQuestionStartTime, quizState.showResults, currentQuestion, quizState.isActive]);
 
   // Handler functions
   const handleUpdateDisplayCode = async (code: string) => {
@@ -256,52 +264,8 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
   };
 
   const handleOpenBigScreen = () => {
-    const bigScreenUrl = `${window.location.origin}/big-screen/${displayCode}`;
-    window.open(bigScreenUrl, '_blank', 'width=1920,height=1080,fullscreen=yes');
-  };
-
-  const exportResults = () => {
-    // Create comprehensive Excel-compatible CSV data
-    const csvData = [];
-    
-    // Quiz Summary Header
-    csvData.push(['QUIZ RESULTS EXPORT']);
-    csvData.push(['Quiz Title:', quizState.quizSettings.title]);
-    csvData.push(['Description:', quizState.quizSettings.description]);
-    csvData.push(['Export Date:', new Date().toLocaleString()]);
-    csvData.push(['Total Questions:', quizState.questions.length]);
-    csvData.push(['Total Participants:', quizState.participants.length]);
-    csvData.push(['Average Score:', Math.round(quizState.statistics.averageScore)]);
-    csvData.push([]);
-    
-    // Participant Results
-    csvData.push(['Rank', 'Name', 'Mobile', 'Final Score', 'Streak', 'Badges']);
-    
-    const sortedParticipants = [...quizState.participants].sort((a, b) => b.score - a.score);
-    sortedParticipants.forEach((participant, index) => {
-      csvData.push([
-        index + 1,
-        participant.name,
-        participant.mobile,
-        participant.score,
-        participant.streak,
-        participant.badges.join('; '),
-      ]);
-    });
-    
-    // Convert to CSV string
-    const csvString = csvData.map(row => 
-      row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
-    ).join('\n');
-    
-    // Download file
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `purplehat-quiz-results-${quizState.quizSettings.title.replace(/[^a-zA-Z0-9]/g, '-')}-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const currentAccessCode = (quizState as any).accessCode || displayCode;
+    window.open(`/big-screen/${currentAccessCode}`, '_blank');
   };
 
   const handleLoadTemplate = (templateQuestions: Question[], templateSettings: QuizSettings) => {
@@ -312,7 +276,103 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
     window.location.href = `/host/${sessionId}`;
   };
 
-  // Final Results View
+  // Enhanced Export Functions
+  const handleQuickExport = () => {
+    exportManager.quickExportResults();
+    
+    // Show success notification
+    const notification = document.createElement('div');
+    notification.innerHTML = `
+      <div style="position: fixed; top: 20px; right: 20px; background: #10B981; color: white; padding: 16px; border-radius: 8px; z-index: 9999; font-family: monospace; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+        📊 QUICK EXPORT COMPLETE!<br/>
+        <small style="opacity: 0.9;">Results with analytics exported</small>
+      </div>
+    `;
+    document.body.appendChild(notification);
+    setTimeout(() => {
+      if (document.body.contains(notification)) {
+        document.body.removeChild(notification);
+      }
+    }, 3000);
+  };
+
+  const handleFullExport = () => {
+    exportManager.fullExportWithDetails();
+    
+    // Show success notification
+    const notification = document.createElement('div');
+    notification.innerHTML = `
+      <div style="position: fixed; top: 20px; right: 20px; background: #10B981; color: white; padding: 16px; border-radius: 8px; z-index: 9999; font-family: monospace; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+        📋 FULL EXPORT COMPLETE!<br/>
+        <small style="opacity: 0.9;">Complete data with answer details</small>
+      </div>
+    `;
+    document.body.appendChild(notification);
+    setTimeout(() => {
+      if (document.body.contains(notification)) {
+        document.body.removeChild(notification);
+      }
+    }, 3000);
+  };
+
+  const handleParticipantsExport = () => {
+    exportManager.exportParticipantsOnly();
+    
+    // Show success notification
+    const notification = document.createElement('div');
+    notification.innerHTML = `
+      <div style="position: fixed; top: 20px; right: 20px; background: #10B981; color: white; padding: 16px; border-radius: 8px; z-index: 9999; font-family: monospace; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+        👥 PARTICIPANTS EXPORTED!<br/>
+        <small style="opacity: 0.9;">Participant list with institutes</small>
+      </div>
+    `;
+    document.body.appendChild(notification);
+    setTimeout(() => {
+      if (document.body.contains(notification)) {
+        document.body.removeChild(notification);
+      }
+    }, 3000);
+  };
+
+  const handleQuestionAnalyticsExport = () => {
+    exportManager.exportQuestionAnalytics();
+    
+    // Show success notification
+    const notification = document.createElement('div');
+    notification.innerHTML = `
+      <div style="position: fixed; top: 20px; right: 20px; background: #10B981; color: white; padding: 16px; border-radius: 8px; z-index: 9999; font-family: monospace; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+        📈 ANALYTICS EXPORTED!<br/>
+        <small style="opacity: 0.9;">Question performance report</small>
+      </div>
+    `;
+    document.body.appendChild(notification);
+    setTimeout(() => {
+      if (document.body.contains(notification)) {
+        document.body.removeChild(notification);
+      }
+    }, 3000);
+  };
+
+  const handleJSONExport = () => {
+    exportManager.exportToJSON();
+    
+    // Show success notification
+    const notification = document.createElement('div');
+    notification.innerHTML = `
+      <div style="position: fixed; top: 20px; right: 20px; background: #10B981; color: white; padding: 16px; border-radius: 8px; z-index: 9999; font-family: monospace; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+        💾 JSON EXPORT COMPLETE!<br/>
+        <small style="opacity: 0.9;">Raw data in JSON format</small>
+      </div>
+    `;
+    document.body.appendChild(notification);
+    setTimeout(() => {
+      if (document.body.contains(notification)) {
+        document.body.removeChild(notification);
+      }
+    }, 3000);
+  };
+
+  // Final Results View with Enhanced Export Options
   if (quizState.showResults && quizState.isFinished) {
     const sortedParticipants = [...quizState.participants].sort((a, b) => b.score - a.score);
     
@@ -329,66 +389,163 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
                 <p className="text-gray-300 text-lg">{quizState.quizSettings.title}</p>
                 <p className="text-sm text-purple-300">Powered by Purplehat Events</p>
               </div>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={exportResults}
-                  className="bg-green-500 hover:bg-green-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg transition-colors flex items-center gap-2 text-sm sm:text-base"
-                >
-                  <Download className="w-4 h-4" />
-                  Export Results
-                </button>
-                <button
-                  onClick={onBack}
-                  className="bg-gray-600 hover:bg-gray-700 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg transition-colors text-sm sm:text-base"
-                >
-                  New Quiz
-                </button>
+              
+              {/* Enhanced Export Options */}
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={handleQuickExport}
+                    className="bg-green-500 hover:bg-green-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg transition-colors flex items-center gap-2 text-sm sm:text-base"
+                  >
+                    <Download className="w-4 h-4" />
+                    Quick Export
+                  </button>
+                  <button
+                    onClick={handleFullExport}
+                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg transition-colors flex items-center gap-2 text-sm sm:text-base"
+                  >
+                    <Database className="w-4 h-4" />
+                    Full Export
+                  </button>
+                </div>
+                
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={handleParticipantsExport}
+                    className="bg-purple-500 hover:bg-purple-600 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
+                  >
+                    <Users className="w-4 h-4" />
+                    Participants
+                  </button>
+                  <button
+                    onClick={handleQuestionAnalyticsExport}
+                    className="bg-orange-500 hover:bg-orange-600 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    Analytics
+                  </button>
+                  <button
+                    onClick={handleJSONExport}
+                    className="bg-gray-500 hover:bg-gray-600 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
+                  >
+                    <FileText className="w-4 h-4" />
+                    JSON
+                  </button>
+                  <button
+                    onClick={onBack}
+                    className="bg-gray-600 hover:bg-gray-700 text-white px-3 sm:px-4 py-2 rounded-lg transition-colors text-sm"
+                  >
+                    New Quiz
+                  </button>
+                </div>
               </div>
             </div>
             
-            {/* Leaderboard */}
-            <div className="space-y-4">
-              <h2 className="text-xl sm:text-2xl font-bold text-white mb-4">Final Leaderboard</h2>
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {sortedParticipants.map((participant, index) => (
-                  <div
-                    key={participant.id}
-                    className={`flex items-center justify-between p-4 sm:p-6 rounded-xl transition-all duration-300 ${
-                      index === 0
-                        ? 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-2 border-yellow-400/50 shadow-2xl'
-                        : index === 1
-                        ? 'bg-gradient-to-r from-gray-400/20 to-gray-500/20 border border-gray-400/50'
-                        : index === 2
-                        ? 'bg-gradient-to-r from-orange-600/20 to-yellow-600/20 border border-orange-400/50'
-                        : 'bg-gray-800/50 border border-gray-600'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4 sm:gap-6">
-                      <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center font-bold text-base sm:text-lg ${
-                        index === 0 ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-black shadow-lg' :
-                        index === 1 ? 'bg-gradient-to-r from-gray-300 to-gray-400 text-black' :
-                        index === 2 ? 'bg-gradient-to-r from-orange-400 to-yellow-500 text-black' :
-                        'bg-gray-600 text-white'
+            {/* Statistics Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 mb-8">
+              <div className="bg-blue-500/20 border border-blue-400/30 rounded-xl p-4 text-center">
+                <div className="text-2xl sm:text-3xl font-bold text-blue-400 mb-1">
+                  {quizState.participants.length}
+                </div>
+                <div className="text-sm text-blue-300">Participants</div>
+              </div>
+              <div className="bg-green-500/20 border border-green-400/30 rounded-xl p-4 text-center">
+                <div className="text-2xl sm:text-3xl font-bold text-green-400 mb-1">
+                  {quizState.questions.length}
+                </div>
+                <div className="text-sm text-green-300">Questions</div>
+              </div>
+              <div className="bg-yellow-500/20 border border-yellow-400/30 rounded-xl p-4 text-center">
+                <div className="text-2xl sm:text-3xl font-bold text-yellow-400 mb-1">
+                  {Math.round(quizState.statistics.averageScore)}
+                </div>
+                <div className="text-sm text-yellow-300">Avg Score</div>
+              </div>
+              <div className="bg-purple-500/20 border border-purple-400/30 rounded-xl p-4 text-center">
+                <div className="text-2xl sm:text-3xl font-bold text-purple-400 mb-1">
+                  {Math.max(...sortedParticipants.map(p => p.score), 0)}
+                </div>
+                <div className="text-sm text-purple-300">High Score</div>
+              </div>
+            </div>
+
+            {/* Top 3 Winners */}
+            {sortedParticipants.length > 0 && (
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                  <Trophy className="w-6 h-6 text-yellow-400" />
+                  Top 3 Winners
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {sortedParticipants.slice(0, 3).map((participant, index) => (
+                    <div
+                      key={participant.id}
+                      className={`relative overflow-hidden rounded-xl p-6 text-center ${
+                        index === 0
+                          ? 'bg-gradient-to-br from-yellow-400/20 to-yellow-600/20 border-2 border-yellow-400'
+                          : index === 1
+                          ? 'bg-gradient-to-br from-gray-400/20 to-gray-600/20 border-2 border-gray-400'
+                          : 'bg-gradient-to-br from-orange-400/20 to-orange-600/20 border-2 border-orange-400'
+                      }`}
+                    >
+                      <div className={`text-4xl mb-2 ${index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}`}>
+                        {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
+                      </div>
+                      <h3 className="text-lg font-bold text-white mb-1">{participant.name}</h3>
+                      <p className="text-sm text-gray-300 mb-1">{participant.mobile}</p>
+                      <p className="text-sm text-gray-400 mb-3">{(participant as any).institute || 'Institute not specified'}</p>
+                      <div className={`text-2xl font-bold mb-2 ${
+                        index === 0 ? 'text-yellow-400' : index === 1 ? 'text-gray-300' : 'text-orange-400'
                       }`}>
-                        {index + 1}
+                        {participant.score}
                       </div>
-                      <div>
-                        <div className="text-white font-semibold text-lg sm:text-xl">{participant.name}</div>
-                        <div className="text-gray-400 text-sm">{participant.mobile}</div>
-                      </div>
+                      <div className="text-sm text-gray-400">points</div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-2xl sm:text-3xl font-bold text-white">
-                        {participant.score.toLocaleString()}
-                      </div>
-                      {participant.streak > 0 && (
-                        <div className="text-xs text-orange-300">
-                          🔥 {participant.streak} streak
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* All Participants */}
+            <div>
+              <h2 className="text-2xl font-bold text-white mb-6">All Participants</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-600">
+                      <th className="text-left py-3 px-4 text-gray-300 font-medium">Rank</th>
+                      <th className="text-left py-3 px-4 text-gray-300 font-medium">Name</th>
+                      <th className="text-left py-3 px-4 text-gray-300 font-medium">Mobile</th>
+                      <th className="text-left py-3 px-4 text-gray-300 font-medium">Institute</th>
+                      <th className="text-right py-3 px-4 text-gray-300 font-medium">Score</th>
+                      <th className="text-right py-3 px-4 text-gray-300 font-medium">Streak</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedParticipants.map((participant, index) => (
+                      <tr key={participant.id} className="border-b border-gray-700/50 hover:bg-gray-800/30">
+                        <td className="py-3 px-4">
+                          <span className={`font-bold ${
+                            index === 0 ? 'text-yellow-400' : 
+                            index === 1 ? 'text-gray-300' : 
+                            index === 2 ? 'text-orange-400' : 'text-white'
+                          }`}>
+                            #{index + 1}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-white font-medium">{participant.name}</td>
+                        <td className="py-3 px-4 text-gray-300">{participant.mobile}</td>
+                        <td className="py-3 px-4 text-gray-400">{(participant as any).institute || 'Not specified'}</td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="text-cyan-400 font-bold">{participant.score}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="text-orange-400">{participant.streak > 1 ? `🔥 ${participant.streak}` : '-'}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -455,12 +612,12 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
 
   // Main dashboard
   return (
-    <div className="min-h-screen bg-black p-4">
-      {/* Background elements */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,165,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,165,0,0.03)_1px,transparent_1px)] bg-[size:50px_50px]"></div>
-      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-orange-400 to-transparent"></div>
-      <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-red-400 to-transparent"></div>
-      
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
+      {/* Background Effects */}
+      <div className="absolute inset-0 bg-black/20"></div>
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl"></div>
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
+
       {/* Settings Modal */}
       {showSettings && (
         <SettingsModal
@@ -515,39 +672,20 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
           )}
 
           {/* Quiz Controls & Live Stats */}
-          <div className="space-y-6 xl:space-y-8">
-            {/* Quiz Controls */}
+          <div className={`space-y-6 sm:space-y-8 ${showTemplates ? 'xl:col-span-2' : 'xl:col-span-1'}`}>
             <QuizControls
               isActive={quizState.isActive}
               isFinished={quizState.isFinished}
               currentQuestionIndex={quizState.currentQuestionIndex}
               totalQuestions={quizState.questions.length}
-              currentQuestion={currentQuestion}
-              timeRemaining={timeRemaining}
-              answeredCount={answeredCount}
-              totalParticipants={quizState.statistics.totalParticipants}
-              showResults={quizState.showResults}
-              loading={loading}
-              onMakeLive={makeLive}
               onStartQuiz={startQuiz}
-              onNextQuestion={async () => {
-                const nextIndex = quizState.currentQuestionIndex + 1;
-                if (nextIndex < quizState.questions.length) {
-                  await startQuestion(nextIndex);
-                } else {
-                  await finishQuiz();
-                }
-              }}
               onShowResults={showResults}
+              loading={loading}
             />
 
-            {/* Live Leaderboard */}
             <LiveLeaderboard
               participants={quizState.participants}
-              totalQuestions={quizState.questions.length}
-              averageScore={quizState.statistics.averageScore}
-              participationRate={quizState.statistics.participationRate}
-              loading={loading}
+              onExportResults={handleQuickExport}
             />
           </div>
         </div>
