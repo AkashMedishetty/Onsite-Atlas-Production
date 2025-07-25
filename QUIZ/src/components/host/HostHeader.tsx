@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Edit2, Save, X, Users, Monitor, Plus, Settings, RefreshCw } from 'lucide-react';
 
 interface HostHeaderProps {
@@ -8,6 +8,7 @@ interface HostHeaderProps {
   onUpdateTitle: (title: string) => Promise<void>;
   onUpdateDisplayCode: (code: string) => Promise<void>;
   onShareLink: () => void;
+  onShareBigScreen?: () => void;
   onOpenBigScreen: () => void;
   onShowTemplates: () => void;
   onShowSettings: () => void;
@@ -23,6 +24,7 @@ export const HostHeader: React.FC<HostHeaderProps> = ({
   onUpdateTitle,
   onUpdateDisplayCode,
   onShareLink,
+  onShareBigScreen,
   onOpenBigScreen,
   onShowTemplates,
   onShowSettings,
@@ -34,6 +36,19 @@ export const HostHeader: React.FC<HostHeaderProps> = ({
   const [editingSessionCode, setEditingSessionCode] = useState(false);
   const [tempQuizName, setTempQuizName] = useState(quizTitle);
   const [tempSessionCode, setTempSessionCode] = useState(displayCode);
+
+  // Sync temp values with props when they change externally
+  useEffect(() => {
+    if (!editingQuizName) {
+      setTempQuizName(quizTitle);
+    }
+  }, [quizTitle, editingQuizName]);
+
+  useEffect(() => {
+    if (!editingSessionCode) {
+      setTempSessionCode(displayCode);
+    }
+  }, [displayCode, editingSessionCode]);
 
   const handleSaveQuizName = async () => {
     try {
@@ -169,14 +184,25 @@ export const HostHeader: React.FC<HostHeaderProps> = ({
       
       {/* Right Side - Action Buttons */}
       <div className="flex flex-wrap gap-3">
-        {/* Share Link */}
+        {/* Share Participant Link */}
         <button
           onClick={onShareLink}
           className="bg-black border border-green-400/50 hover:border-green-400 text-green-400 hover:text-white px-3 sm:px-4 py-2 transition-colors flex items-center gap-2 text-sm sm:text-base font-mono font-bold uppercase tracking-wider"
         >
           <Users className="w-4 h-4" />
-          SHARE LINK
+          SHARE QUIZ
         </button>
+        
+        {/* Share Big Screen Link */}
+        {onShareBigScreen && (
+          <button
+            onClick={onShareBigScreen}
+            className="bg-black border border-purple-400/50 hover:border-purple-400 text-purple-400 hover:text-white px-3 sm:px-4 py-2 transition-colors flex items-center gap-2 text-sm sm:text-base font-mono font-bold uppercase tracking-wider"
+          >
+            <Monitor className="w-4 h-4" />
+            SHARE SCREEN
+          </button>
+        )}
         
         {/* Refresh */}
         <button

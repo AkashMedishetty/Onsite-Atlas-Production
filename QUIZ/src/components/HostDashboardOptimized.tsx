@@ -239,17 +239,17 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
 
   const handleShareLink = () => {
     const currentAccessCode = (quizState as any).accessCode || displayCode;
-    const shareableLink = currentAccessCode 
+    const participantLink = currentAccessCode 
       ? `${window.location.origin}?code=${currentAccessCode}` 
       : `${window.location.origin}?join=${sessionId}`;
     
-    navigator.clipboard.writeText(shareableLink).then(() => {
+    navigator.clipboard.writeText(participantLink).then(() => {
       // Create notification
       const notification = document.createElement('div');
       notification.innerHTML = `
         <div style="position: fixed; top: 20px; right: 20px; background: #10B981; color: white; padding: 16px; border-radius: 8px; z-index: 9999; font-family: monospace; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-          ✅ SHAREABLE LINK COPIED!<br/>
-          <small style="opacity: 0.9;">Share: ${shareableLink}</small>
+          ✅ PARTICIPANT LINK COPIED!<br/>
+          <small style="opacity: 0.9;">Share: ${participantLink}</small>
         </div>
       `;
       document.body.appendChild(notification);
@@ -259,7 +259,31 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
         }
       }, 3000);
     }).catch(() => {
-      alert('Shareable link: ' + shareableLink);
+      alert('Participant link: ' + participantLink);
+    });
+  };
+
+  const handleShareBigScreen = () => {
+    const currentAccessCode = (quizState as any).accessCode || displayCode;
+    const bigScreenLink = `${window.location.origin}/big-screen/${currentAccessCode}`;
+    
+    navigator.clipboard.writeText(bigScreenLink).then(() => {
+      // Create notification
+      const notification = document.createElement('div');
+      notification.innerHTML = `
+        <div style="position: fixed; top: 20px; right: 20px; background: #8B5CF6; color: white; padding: 16px; border-radius: 8px; z-index: 9999; font-family: monospace; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+          📺 BIG SCREEN LINK COPIED!<br/>
+          <small style="opacity: 0.9;">Share: ${bigScreenLink}</small>
+        </div>
+      `;
+      document.body.appendChild(notification);
+      setTimeout(() => {
+        if (document.body.contains(notification)) {
+          document.body.removeChild(notification);
+        }
+      }, 3000);
+    }).catch(() => {
+      alert('Big screen link: ' + bigScreenLink);
     });
   };
 
@@ -636,6 +660,7 @@ export const HostDashboardOptimized: React.FC<HostDashboardOptimizedProps> = ({
           onUpdateTitle={(title) => updateQuizSettings({ title })}
           onUpdateDisplayCode={handleUpdateDisplayCode}
           onShareLink={handleShareLink}
+          onShareBigScreen={handleShareBigScreen}
           onOpenBigScreen={handleOpenBigScreen}
           onShowTemplates={() => setShowTemplates(!showTemplates)}
           onShowSettings={() => setShowSettings(true)}

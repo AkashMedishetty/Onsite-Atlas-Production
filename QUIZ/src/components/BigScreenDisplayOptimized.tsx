@@ -360,9 +360,14 @@ export const BigScreenDisplayOptimized: React.FC<BigScreenDisplayOptimizedProps>
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-black to-blue-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-24 h-24 border-4 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin mx-auto mb-8"></div>
+      <div className="min-h-screen bg-black relative overflow-hidden flex items-center justify-center">
+        {/* Futuristic Grid Background */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.03)_1px,transparent_1px)] bg-[size:50px_50px]"></div>
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent"></div>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-orange-400 to-transparent"></div>
+        
+        <div className="text-center relative z-10">
+          <div className="w-24 h-24 border-4 border-cyan-400/30 border-t-cyan-400 rounded-none animate-spin mx-auto mb-8"></div>
           <div className="text-4xl font-black text-white mb-6 font-mono">CONNECTING TO QUIZ</div>
           <div className="text-cyan-400 font-mono text-xl">Access Code: {accessCode}</div>
         </div>
@@ -373,14 +378,19 @@ export const BigScreenDisplayOptimized: React.FC<BigScreenDisplayOptimizedProps>
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-900 via-black to-gray-900 flex items-center justify-center p-4">
-        <div className="bg-red-500/20 border-2 border-red-500 p-12 text-center max-w-lg rounded-3xl">
+      <div className="min-h-screen bg-black relative overflow-hidden flex items-center justify-center p-4">
+        {/* Futuristic Grid Background */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,0,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,0,0,0.03)_1px,transparent_1px)] bg-[size:50px_50px]"></div>
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-red-400 to-transparent"></div>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-red-400 to-transparent"></div>
+        
+        <div className="bg-red-500/20 border-2 border-red-500 p-12 text-center max-w-lg relative z-10">
           <XCircle className="w-16 h-16 text-red-400 mx-auto mb-6" />
           <h2 className="text-3xl font-black text-red-300 mb-6 font-mono">CONNECTION ERROR</h2>
           <p className="text-red-200 mb-8 font-mono text-lg">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="bg-red-500 hover:bg-red-400 text-white px-8 py-4 font-mono font-bold uppercase tracking-wider transition-colors rounded-lg text-lg"
+            className="bg-red-500 hover:bg-red-400 text-white px-8 py-4 font-mono font-bold uppercase tracking-wider transition-colors text-lg"
           >
             RELOAD
           </button>
@@ -405,8 +415,13 @@ export const BigScreenDisplayOptimized: React.FC<BigScreenDisplayOptimizedProps>
 
       {/* Quiz in progress or finished */}
       {(quizState.isActive || quizState.isFinished) && (
-        <div className="min-h-screen bg-gradient-to-br from-purple-900 via-black to-blue-900 p-4">
-          <div className="max-w-7xl mx-auto">
+        <div className="min-h-screen bg-black relative overflow-hidden p-4">
+          {/* Futuristic Grid Background */}
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.03)_1px,transparent_1px)] bg-[size:50px_50px]"></div>
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent"></div>
+          <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-orange-400 to-transparent"></div>
+          
+          <div className="max-w-7xl mx-auto relative z-10">
             {/* Header with Quiz Info */}
             <div className="text-center mb-8">
               <h1 className="text-4xl sm:text-6xl font-black text-white mb-4 font-mono bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
