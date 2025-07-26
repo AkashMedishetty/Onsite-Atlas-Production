@@ -5,9 +5,15 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: {
-    historyApiFallback: true,
+    port: 3000,
   },
   optimizeDeps: {
     exclude: ['lucide-react'],
+  },
+  define: {
+    // Ensure environment variables are available at build time
+    'process.env.NEXT_PUBLIC_BACKEND_STRICT': JSON.stringify(process.env.NEXT_PUBLIC_BACKEND_STRICT),
+    'process.env.NEXT_PUBLIC_BACKEND_URL': JSON.stringify(process.env.NEXT_PUBLIC_BACKEND_URL),
+    'process.env.NEXT_PUBLIC_BACKEND_WS_URL': JSON.stringify(process.env.NEXT_PUBLIC_BACKEND_WS_URL),
   },
 });
