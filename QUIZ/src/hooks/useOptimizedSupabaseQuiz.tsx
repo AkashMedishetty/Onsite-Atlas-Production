@@ -13,6 +13,12 @@ const MAX_CACHE_ENTRIES = 50;
 // Check if strict backend mode is enabled
 const STRICT_BACKEND_MODE = process.env.NEXT_PUBLIC_BACKEND_STRICT === 'true';
 
+// Debug logging to see what's happening
+console.log('🔍 [DEBUG] Environment variables check:');
+console.log('  NEXT_PUBLIC_BACKEND_STRICT:', process.env.NEXT_PUBLIC_BACKEND_STRICT);
+console.log('  NEXT_PUBLIC_BACKEND_URL:', process.env.NEXT_PUBLIC_BACKEND_URL);
+console.log('  NEXT_PUBLIC_BACKEND_WS_URL:', process.env.NEXT_PUBLIC_BACKEND_WS_URL);
+console.log('  STRICT_BACKEND_MODE calculated:', STRICT_BACKEND_MODE);
 console.log(`🔧 [QUIZ] Strict backend mode: ${STRICT_BACKEND_MODE ? 'ENABLED' : 'DISABLED'}`);
 
 // Global cache for quiz data
