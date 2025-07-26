@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useOptimizedSupabaseQuiz } from '../hooks/useOptimizedSupabaseQuiz';
+import { createBackendClient, isBackendAvailable } from '../lib/backendClient';
 import { supabase } from '../lib/supabase';
-import { optimizedSync } from '../lib/optimizedRealtimeSync';
 import { ParticipantWaitingRoom } from './participant/ParticipantWaitingRoom';
 import { ParticipantQuestion } from './participant/ParticipantQuestion';
 import { ParticipantResults } from './participant/ParticipantResults';
@@ -15,16 +16,6 @@ interface ParticipantQuizOptimizedProps {
   onBack: () => void;
 }
 
-interface QuizState {
-  isActive: boolean;
-  isFinished: boolean;
-  currentQuestionIndex: number;
-  currentQuestionStartTime: string | null;
-  showResults: boolean;
-  title: string;
-  description: string;
-}
-
 export const ParticipantQuizOptimized: React.FC<ParticipantQuizOptimizedProps> = ({
   sessionId,
   participantId,
@@ -32,36 +23,96 @@ export const ParticipantQuizOptimized: React.FC<ParticipantQuizOptimizedProps> =
   participantMobile,
   onBack,
 }) => {
-  const [quizState, setQuizState] = useState<QuizState>({
-    isActive: false,
-    isFinished: false,
-    currentQuestionIndex: -1,
-    currentQuestionStartTime: null,
-    showResults: false,
-    title: 'Loading...',
-    description: '',
-  });
-  const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const [myParticipant, setMyParticipant] = useState<Participant | null>(null);
+  // Use the optimized hook for backend-first approach
+  const {
+    quizState,
+    loading: quizLoading,
+    error: quizError,
+    isConnected,
+    isUsingBackend
+  } = useOptimizedSupabaseQuiz(sessionId);
+
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [hasAnswered, setHasAnswered] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [myParticipant, setMyParticipant] = useState<Participant | null>(null);
+  const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [backendClient, setBackendClient] = useState<any>(null);
   
   const handleError = useErrorHandler();
+
+  // Initialize backend client if available
+  useEffect(() => {
+    const initBackend = async () => {
+      if (isUsingBackend) {
+        try {
+          const client = createBackendClient();
+          const connected = await client.connect();
+          if (connected) {
+            setBackendClient(client);
+            console.log('🚀 [PARTICIPANT] Connected to backend for answer submission');
+          }
+        } catch (error) {
+          console.error('❌ [PARTICIPANT] Backend connection failed:', error);
+        }
+      }
+    };
+
+    initBackend();
+  }, [isUsingBackend]);
+
+  // Get current question
+  const currentQuestion = useMemo(() => {
+    if (quizState.currentQuestionIndex >= 0 && quizState.questions[quizState.currentQuestionIndex]) {
+      return quizState.questions[quizState.currentQuestionIndex];
+    }
+    return null;
+  }, [quizState.questions, quizState.currentQuestionIndex]);
+
+  // Find my participant data
+  useEffect(() => {
+    const participant = quizState.participants.find(p => p.id === participantId);
+    if (participant) {
+      setMyParticipant(participant);
+    }
+  }, [quizState.participants, participantId]);
+
+  // Check if participant has answered current question
+  useEffect(() => {
+    if (currentQuestion && myParticipant) {
+      const hasAnsweredQuestion = myParticipant.answers && 
+        Object.prototype.hasOwnProperty.call(myParticipant.answers, currentQuestion.id);
+      setHasAnswered(hasAnsweredQuestion);
+      
+             if (hasAnsweredQuestion) {
+         const answer = myParticipant.answers[currentQuestion.id];
+         setSelectedAnswer(answer ? (answer as any).selectedAnswer || null : null);
+       } else {
+         setSelectedAnswer(null);
+       }
+    }
+  }, [currentQuestion, myParticipant]);
 
   // Update last seen timestamp periodically
   useEffect(() => {
     const updateLastSeen = async () => {
       try {
-        await supabase
-          .from('quiz_participants')
-          .update({ last_seen: new Date().toISOString() })
-          .eq('id', participantId);
+        if (isUsingBackend && backendClient) {
+          // Use backend API for last seen update
+          await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/participant/${participantId}/heartbeat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+        } else {
+          // Fallback to Supabase
+          await supabase
+            .from('quiz_participants')
+            .update({ last_seen: new Date().toISOString() })
+            .eq('id', participantId);
+        }
       } catch (error) {
-        handleError(error instanceof Error ? error : new Error('Unknown error'), 'updateLastSeen');
+        console.warn('Failed to update last seen:', error);
       }
     };
     
@@ -69,185 +120,18 @@ export const ParticipantQuizOptimized: React.FC<ParticipantQuizOptimizedProps> =
     const interval = setInterval(updateLastSeen, 30000); // Update every 30 seconds
 
     return () => clearInterval(interval);
-  }, [participantId, handleError]);
+  }, [participantId, isUsingBackend, backendClient]);
 
-  // Load quiz data function
-  const loadQuizData = async () => {
-    try {
-      console.log('📊 [PARTICIPANT] Loading quiz data for session:', sessionId);
+  // Timer effect for current question
+  useEffect(() => {
+    if (quizState.isActive && 
+        quizState.currentQuestionStartTime && 
+        !quizState.showResults && 
+        currentQuestion && 
+        !hasAnswered) {
       
-      // Load session data
-      const { data: session, error: sessionError } = await supabase
-        .from('quiz_sessions')
-        .select('is_active, is_finished, current_question_index, current_question_start_time, show_results, title, description')
-        .eq('id', sessionId)
-        .single();
-
-      if (sessionError) throw sessionError;
-
-      const newQuizState = {
-        isActive: session.is_active,
-        isFinished: session.is_finished,
-        currentQuestionIndex: session.current_question_index,
-        currentQuestionStartTime: session.current_question_start_time,
-        showResults: session.show_results,
-        title: session.title,
-        description: session.description,
-      };
-
-      console.log('✅ [PARTICIPANT] Quiz state updated:', newQuizState);
-      setQuizState(newQuizState);
-
-      // Load current question if quiz is active
-      if (session.current_question_index >= 0) {
-        const { data: question, error: questionError } = await supabase
-          .from('quiz_questions')
-          .select('id, question, options, correct_answer, time_limit, points, image_url, order_index')
-          .eq('quiz_session_id', sessionId)
-          .eq('order_index', session.current_question_index)
-          .single();
-
-        if (!questionError && question) {
-          const processedQuestion: Question = {
-            id: question.id,
-            question: question.question,
-            options: question.options,
-            correctAnswer: question.correct_answer,
-            timeLimit: question.time_limit || 30,
-            points: question.points || 100,
-            difficulty: 'medium',
-            orderIndex: question.order_index,
-            imageUrl: question.image_url || undefined,
-            optionImages: undefined,
-          };
-          
-          setCurrentQuestion(processedQuestion);
-          
-          // Check for existing answer
-          const { data: existingAnswer } = await supabase
-            .from('quiz_answers')
-            .select('answer_index')
-            .eq('participant_id', participantId)
-            .eq('question_id', question.id)
-            .single();
-
-          if (existingAnswer) {
-            setHasAnswered(true);
-            setSelectedAnswer(existingAnswer.answer_index);
-          } else {
-            setHasAnswered(false);
-            setSelectedAnswer(null);
-          }
-        }
-      } else {
-        setCurrentQuestion(null);
-        setHasAnswered(false);
-        setSelectedAnswer(null);
-      }
-
-      // Load participants
-      loadParticipantsData();
-
-    } catch (err) {
-      console.error('❌ [PARTICIPANT] Error loading quiz data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load quiz data');
-      handleError(err instanceof Error ? err : new Error('Unknown error'), 'loadQuizData');
-    }
-  };
-
-  // Load participants data
-  const loadParticipantsData = async () => {
-    try {
-      const { data: participantsData, error: participantsError } = await supabase
-        .from('quiz_participants')
-        .select('id, name, mobile, score, streak, badges, avatar_color, joined_at, last_seen')
-        .eq('quiz_session_id', sessionId)
-        .order('score', { ascending: false });
-
-      if (!participantsError && participantsData) {
-        const processedParticipants: Participant[] = participantsData.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          mobile: p.mobile,
-          score: p.score || 0,
-          streak: p.streak || 0,
-          badges: p.badges || [],
-          avatarColor: p.avatar_color || 'bg-gradient-to-r from-blue-400 to-purple-400',
-          joinedAt: new Date(p.joined_at).getTime(),
-          lastSeen: p.last_seen,
-          answers: {} // Load separately when needed
-        }));
-        
-        setParticipants(processedParticipants);
-        const me = processedParticipants.find(p => p.id === participantId);
-        if (me) setMyParticipant(me);
-      }
-    } catch (err) {
-      console.error('❌ [PARTICIPANT] Error loading participants:', err);
-      handleError(err instanceof Error ? err : new Error('Unknown error'), 'loadParticipantsData');
-    }
-  };
-
-  // Subscribe to real-time updates
-  useEffect(() => {
-    if (!sessionId) return;
-
-    console.log('⚡ [PARTICIPANT] Setting up optimized sync for session:', sessionId);
-    let isActive = true;
-
-    const unsubscribe = optimizedSync.subscribe(sessionId, (update) => {
-      if (!isActive) return;
-      
-      console.log('🚀 [PARTICIPANT] Sync update:', update.type);
-          
-      // Immediate state updates
-      switch (update.type) {
-        case 'START_QUIZ':
-        case 'START_QUESTION':
-          console.log('⚡ [PARTICIPANT] Question update, reloading data immediately');
-          setHasAnswered(false);
-          setSelectedAnswer(null);
-          loadQuizData();
-          break;
-        case 'SHOW_RESULTS':
-          console.log('⚡ [PARTICIPANT] Results update, reloading data immediately');
-          loadQuizData();
-          break;
-        case 'FINISH_QUIZ':
-          console.log('⚡ [PARTICIPANT] Quiz finished, reloading data immediately');
-          loadQuizData();
-          break;
-        case 'PARTICIPANT_UPDATE':
-          console.log('⚡ [PARTICIPANT] Participant update');
-          loadParticipantsData();
-          break;
-      }
-    }, 'participant');
-
-    return () => {
-      isActive = false;
-      unsubscribe();
-    };
-  }, [sessionId]);
-
-  // Load initial data
-  useEffect(() => {
-    console.log('🎮 [PARTICIPANT] Initializing for session:', sessionId, 'participant:', participantId);
-    
-    const initializeData = async () => {
-      setLoading(true);
-      await loadQuizData();
-      setLoading(false);
-    };
-
-    initializeData();
-  }, [sessionId, participantId]);
-
-  // Timer for current question
-  useEffect(() => {
-    if (quizState.isActive && quizState.currentQuestionStartTime && !quizState.showResults && currentQuestion) {
-      const startTime = new Date(quizState.currentQuestionStartTime).getTime();
-      const timeLimit = currentQuestion.timeLimit * 1000;
+      const startTime = quizState.currentQuestionStartTime;
+      const timeLimit = (currentQuestion.timeLimit || 30) * 1000;
       
       const interval = setInterval(() => {
         const elapsed = Date.now() - startTime;
@@ -257,6 +141,10 @@ export const ParticipantQuizOptimized: React.FC<ParticipantQuizOptimizedProps> =
         if (remaining <= 0) {
           clearInterval(interval);
           setTimeRemaining(0);
+          // Auto-submit if time runs out and no answer selected
+          if (selectedAnswer === null) {
+            handleSubmitAnswer(-1); // Submit -1 for no answer
+          }
         }
       }, 100);
 
@@ -264,115 +152,117 @@ export const ParticipantQuizOptimized: React.FC<ParticipantQuizOptimizedProps> =
     } else {
       setTimeRemaining(null);
     }
-  }, [quizState.currentQuestionStartTime, quizState.showResults, currentQuestion, quizState.isActive]);
+  }, [quizState.currentQuestionStartTime, quizState.showResults, currentQuestion, quizState.isActive, hasAnswered, selectedAnswer]);
 
-  // Submit answer function
-  const submitAnswer = async (answerIndex: number) => {
-    if (!currentQuestion || hasAnswered || !quizState.currentQuestionStartTime) return;
+  // Handle answer submission with backend preference
+  const handleSubmitAnswer = useCallback(async (answerIndex: number) => {
+    if (!currentQuestion || hasAnswered || submitLoading) return;
 
     try {
-      setLoading(true);
-      const timeToAnswer = (Date.now() - new Date(quizState.currentQuestionStartTime).getTime()) / 1000;
-      const isCorrect = answerIndex === currentQuestion.correctAnswer;
-      
-      // Calculate points
-      let pointsEarned = 0;
-      if (isCorrect) {
-        pointsEarned = currentQuestion.points;
-        // Speed bonus
-        const speedMultiplier = Math.max(0.5, 1 - (timeToAnswer / currentQuestion.timeLimit) * 0.5);
-        pointsEarned = Math.round(pointsEarned * speedMultiplier);
-      }
+      setSubmitLoading(true);
+      setError(null);
 
-      // Submit answer
-      const { error: answerError } = await supabase
-        .from('quiz_answers')
-        .insert({
-          quiz_session_id: sessionId,
-          participant_id: participantId,
-          question_id: currentQuestion.id,
-          answer_index: answerIndex,
-          is_correct: isCorrect,
-          time_to_answer: timeToAnswer,
-          points_earned: pointsEarned,
+      const timeToAnswer = quizState.currentQuestionStartTime 
+        ? Date.now() - quizState.currentQuestionStartTime 
+        : 0;
+
+      if (isUsingBackend && backendClient) {
+        // Use backend for answer submission
+        console.log('📡 [PARTICIPANT] Submitting answer via backend...');
+        
+        const result = await backendClient.submitAnswer({
+          sessionId,
+          participantId,
+          questionId: currentQuestion.id,
+          answerIndex,
+          timeToAnswer
         });
 
-      if (answerError) throw answerError;
+        console.log('✅ [PARTICIPANT] Answer submitted via backend:', result);
+        
+      } else {
+        // Fallback to Supabase
+        console.log('📊 [PARTICIPANT] Submitting answer via Supabase fallback...');
+        
+        const isCorrect = answerIndex === currentQuestion.correctAnswer;
+        const points = isCorrect ? (currentQuestion.points || 100) : 0;
 
-      // Update participant score and streak
-      const newScore = (myParticipant?.score || 0) + pointsEarned;
-      const newStreak = isCorrect ? (myParticipant?.streak || 0) + 1 : 0;
+        // Insert answer
+        const { error: answerError } = await supabase
+          .from('quiz_answers')
+          .insert({
+            quiz_session_id: sessionId,
+            participant_id: participantId,
+            question_id: currentQuestion.id,
+            selected_answer: answerIndex,
+            is_correct: isCorrect,
+            points_earned: points,
+            time_to_answer: timeToAnswer,
+            answered_at: new Date().toISOString()
+          });
 
-      const { error: participantError } = await supabase
-        .from('quiz_participants')
-        .update({
-          score: newScore,
-          streak: newStreak,
-          last_seen: new Date().toISOString(),
-        })
-        .eq('id', participantId);
+        if (answerError) throw answerError;
 
-      if (participantError) throw participantError;
+        // Update participant score
+        const newScore = (myParticipant?.score || 0) + points;
+        const { error: scoreError } = await supabase
+          .from('quiz_participants')
+          .update({ 
+            score: newScore,
+            last_seen: new Date().toISOString()
+          })
+          .eq('id', participantId);
+
+        if (scoreError) throw scoreError;
+
+        console.log('✅ [PARTICIPANT] Answer submitted via Supabase');
+      }
 
       setSelectedAnswer(answerIndex);
       setHasAnswered(true);
-
-      // Update local participant data
-      if (myParticipant) {
-        setMyParticipant({
-          ...myParticipant,
-          score: newScore,
-          streak: newStreak
-        });
-      }
-
+      
     } catch (err) {
-      console.error('❌ [PARTICIPANT] Error submitting answer:', err);
-      handleError(err instanceof Error ? err : new Error('Unknown error'), 'submitAnswer');
-      alert('Failed to submit answer. Please try again.');
+      console.error('❌ [PARTICIPANT] Answer submission failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to submit answer');
     } finally {
-      setLoading(false);
+      setSubmitLoading(false);
     }
-  };
+  }, [currentQuestion, hasAnswered, submitLoading, quizState.currentQuestionStartTime, isUsingBackend, backendClient, sessionId, participantId, myParticipant]);
 
-  // Loading state
-  if (loading && !quizState.title) {
+  // Get leaderboard for results
+  const topParticipants = useMemo(() => {
+    return [...quizState.participants]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+  }, [quizState.participants]);
+
+  // Handle loading and error states
+  if (quizLoading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin mx-auto mb-4"></div>
-          <div className="text-2xl font-black text-white mb-4 font-mono">CONNECTING TO QUIZ</div>
-          <div className="text-cyan-400 font-mono">SYNCHRONIZING DATA...</div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p className="text-white text-lg">Loading quiz...</p>
+          {isUsingBackend && (
+            <p className="text-green-400 text-sm mt-2">🚀 Backend Mode (300+ participants)</p>
+          )}
         </div>
       </div>
     );
   }
 
-  // Error state
-  if (error) {
+  if (quizError || error) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center p-4">
-        <div className="bg-red-500/20 border border-red-500 p-8 text-center max-w-md rounded-lg">
-          <h2 className="text-xl font-black text-red-300 mb-4 font-mono">CONNECTION ERROR</h2>
-          <p className="text-red-200 mb-6 font-mono">{error}</p>
-          <div className="flex gap-4">
-            <button
-              onClick={() => {
-                setError(null);
-                setLoading(true);
-                loadQuizData().finally(() => setLoading(false));
-              }}
-              className="bg-yellow-500 hover:bg-yellow-400 text-black px-4 py-2 font-mono font-bold uppercase tracking-wider transition-colors rounded"
-            >
-              RETRY
-            </button>
-            <button
-              onClick={onBack}
-              className="bg-red-500 hover:bg-red-400 text-white px-4 py-2 font-mono font-bold uppercase tracking-wider transition-colors rounded"
-            >
-              EXIT
-            </button>
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+        <div className="text-center p-8">
+          <div className="text-red-400 text-xl mb-4">❌ Error</div>
+          <p className="text-white mb-4">{quizError || error}</p>
+          <button
+            onClick={onBack}
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Go Back
+          </button>
         </div>
       </div>
     );
@@ -381,69 +271,52 @@ export const ParticipantQuizOptimized: React.FC<ParticipantQuizOptimizedProps> =
   // Render appropriate component based on quiz state
   return (
     <SimpleErrorBoundary>
-      {/* Waiting for quiz to start */}
-      {!quizState.isActive && (
-        <ParticipantWaitingRoom
-          quizTitle={quizState.title}
-          quizDescription={quizState.description}
-          participantName={participantName}
-          participantMobile={participantMobile}
-          participants={participants}
-          onBack={onBack}
-        />
-      )}
-
-      {/* Quiz finished - show final results */}
-      {quizState.isFinished && myParticipant && (
-        <ParticipantResults
-          isQuizFinished={true}
-          myParticipant={myParticipant}
-          participants={participants}
-          totalQuestions={Math.max(quizState.currentQuestionIndex + 1, 0)}
-          quizTitle={quizState.title}
-          onReturnHome={onBack}
-        />
-      )}
-
-      {/* Active question */}
-      {quizState.isActive && currentQuestion && quizState.currentQuestionIndex >= 0 && !quizState.showResults && myParticipant && (
-        <ParticipantQuestion
-          question={currentQuestion}
-          questionIndex={quizState.currentQuestionIndex}
-          totalQuestions={Math.max(quizState.currentQuestionIndex + 1, 0)} // Approximate, actual count would need to be loaded
-          timeRemaining={timeRemaining}
-          selectedAnswer={selectedAnswer}
-          hasAnswered={hasAnswered}
-          myParticipant={myParticipant}
-          loading={loading}
-          showResults={quizState.showResults}
-          onSelectAnswer={submitAnswer}
-        />
-      )}
-
-      {/* Show results screen */}
-      {quizState.showResults && currentQuestion && myParticipant && (
-        <ParticipantResults
-          isQuizFinished={false}
-          currentQuestion={currentQuestion}
-          myParticipant={myParticipant}
-          participants={participants}
-          totalQuestions={Math.max(quizState.currentQuestionIndex + 1, 0)}
-          quizTitle={quizState.title}
-          onReturnHome={onBack}
-        />
-      )}
-
-      {/* Default waiting state */}
-      {quizState.isActive && !currentQuestion && quizState.currentQuestionIndex >= 0 && !quizState.showResults && (
-        <div className="min-h-screen bg-black flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-16 h-16 border-4 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin mx-auto mb-4"></div>
-            <div className="text-2xl font-black text-white mb-4 font-mono">WAITING FOR NEXT QUESTION</div>
-            <div className="text-cyan-400 font-mono">STAND BY...</div>
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
+        {/* Backend Status Indicator */}
+        {isUsingBackend && (
+          <div className="absolute top-4 right-4 bg-green-600 text-white px-3 py-1 rounded-full text-sm font-medium">
+            🚀 Backend Mode
           </div>
-        </div>
-      )}
+        )}
+        
+                 {!quizState.isActive && !quizState.isFinished && (
+          <ParticipantWaitingRoom
+            participantName={participantName}
+            participantMobile={participantMobile}
+            participants={quizState.participants as any[]}
+            quizTitle={quizState.quizSettings.title}
+            quizDescription={quizState.quizSettings.description}
+            onBack={onBack}
+          />
+        )}
+
+        {quizState.isActive && !quizState.showResults && currentQuestion && (
+          <ParticipantQuestion
+            question={currentQuestion as any}
+            questionIndex={quizState.currentQuestionIndex}
+            totalQuestions={quizState.questions.length}
+            timeRemaining={timeRemaining}
+            selectedAnswer={selectedAnswer}
+            hasAnswered={hasAnswered}
+            myParticipant={myParticipant as any}
+            loading={submitLoading}
+            showResults={quizState.showResults}
+            onSelectAnswer={handleSubmitAnswer}
+          />
+        )}
+
+        {(quizState.showResults || quizState.isFinished) && myParticipant && (
+          <ParticipantResults
+            isQuizFinished={quizState.isFinished}
+            currentQuestion={quizState.showResults && !quizState.isFinished ? (currentQuestion as any) : undefined}
+            myParticipant={myParticipant as any}
+            participants={topParticipants as any[]}
+            totalQuestions={quizState.questions.length}
+            quizTitle={quizState.quizSettings.title}
+            onReturnHome={onBack}
+          />
+        )}
+      </div>
     </SimpleErrorBoundary>
   );
 }; 

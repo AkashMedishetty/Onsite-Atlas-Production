@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Trophy, Clock, Target, Eye, Play, Pause, SkipForward, Settings, Download, Monitor, Smartphone, Tablet, TrendingUp, Activity, Award, Zap, RefreshCw } from 'lucide-react';
+import { Monitor, Smartphone, Tablet, RefreshCw, Plus, Calendar, Users, TrendingUp, Clock, Trophy, Eye, User, Activity, Play, Target, Award, Settings } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { createBackendClient, isBackendAvailable } from '../lib/backendClient';
 
 interface LiveQuiz {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   access_code: string;
-  host_id: string;
   is_active: boolean;
   is_finished: boolean;
   current_question_index: number;
-  show_results: boolean;
   created_at: string;
   updated_at: string;
   participant_count: number;
@@ -21,7 +20,7 @@ interface LiveQuiz {
 }
 
 interface LiveQuizDashboardProps {
-  onSelectQuiz: (quizId: string, accessCode: string) => void;
+  onSelectQuiz: (sessionId: string, accessCode: string) => void;
   onCreateNew: () => void;
   onBack: () => void;
 }
@@ -34,32 +33,78 @@ export const LiveQuizDashboard: React.FC<LiveQuizDashboardProps> = ({
   const [liveQuizzes, setLiveQuizzes] = useState<LiveQuiz[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
+  const [isUsingBackend, setIsUsingBackend] = useState(false);
+  const [backendClient, setBackendClient] = useState<any>(null);
+
+  // Initialize backend client if available
+  useEffect(() => {
+    const initBackend = async () => {
+      try {
+        console.log('🔍 [DASHBOARD] Checking backend availability...');
+        const available = await isBackendAvailable();
+        
+        if (available) {
+          console.log('✅ [DASHBOARD] Backend available, initializing connection...');
+          const client = createBackendClient();
+          const connected = await client.connect();
+          
+          if (connected) {
+            setBackendClient(client);
+            setIsUsingBackend(true);
+            console.log('🚀 [DASHBOARD] Using backend for quiz dashboard');
+          } else {
+            console.log('⚠️ [DASHBOARD] Backend connection failed, falling back to Supabase');
+            setIsUsingBackend(false);
+          }
+        } else {
+          console.log('⚠️ [DASHBOARD] Backend not available, using Supabase fallback');
+          setIsUsingBackend(false);
+        }
+      } catch (error) {
+        console.error('❌ [DASHBOARD] Backend check failed:', error);
+        setIsUsingBackend(false);
+      }
+    };
+
+    initBackend();
+  }, []);
 
   const loadLiveQuizzes = async () => {
     try {
       setError(null);
       
-      // SIMPLIFIED: Get basic quiz info only - NO ANALYTICS to prevent API flooding
-      const { data: quizzes, error: quizzesError } = await supabase
-        .from('quiz_sessions')
-        .select('*')
-        .eq('is_active', true)
-        .order('updated_at', { ascending: false })
-        .limit(20); // Limit results
-
-      if (quizzesError) throw quizzesError;
-
-      // Basic quiz list with minimal processing
-      const quizzesWithAnalytics: LiveQuiz[] = (quizzes || []).map((quiz) => ({
-        ...quiz,
-        participant_count: 0, // Will be loaded on-demand
-        question_count: 0,    // Will be loaded on-demand
-        average_score: 0,     // Will be loaded on-demand
-        completion_rate: 0,   // Will be loaded on-demand
-      }));
-
-      setLiveQuizzes(quizzesWithAnalytics);
+      if (isUsingBackend && backendClient) {
+        // Use backend API
+        console.log('📡 [DASHBOARD] Loading live quizzes via backend...');
+        
+        try {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/quiz/live`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          
+          const quizzes = await response.json();
+          console.log('✅ [DASHBOARD] Live quizzes loaded via backend:', quizzes);
+          setLiveQuizzes(quizzes);
+          
+        } catch (backendError) {
+          console.error('❌ [DASHBOARD] Backend load failed, falling back to Supabase:', backendError);
+          // Fallback to Supabase if backend fails
+          await loadLiveQuizzesFromSupabase();
+        }
+        
+      } else {
+        // Use Supabase fallback
+        console.log('📊 [DASHBOARD] Loading live quizzes via Supabase fallback...');
+        await loadLiveQuizzesFromSupabase();
+      }
+      
     } catch (err) {
       console.error('Error loading live quizzes:', err);
       setError(err instanceof Error ? err.message : 'Failed to load live quizzes');
@@ -68,17 +113,36 @@ export const LiveQuizDashboard: React.FC<LiveQuizDashboardProps> = ({
     }
   };
 
+  const loadLiveQuizzesFromSupabase = async () => {
+    // Original Supabase implementation
+    const { data: quizzes, error: quizzesError } = await supabase
+      .from('quiz_sessions')
+      .select('*')
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(20); // Limit results
+
+    if (quizzesError) throw quizzesError;
+
+    // Basic quiz list with minimal processing
+    const quizzesWithAnalytics: LiveQuiz[] = (quizzes || []).map((quiz) => ({
+      ...quiz,
+      participant_count: 0, // Will be loaded on-demand
+      question_count: 0,    // Will be loaded on-demand
+      average_score: 0,     // Will be loaded on-demand
+      completion_rate: 0,   // Will be loaded on-demand
+    }));
+
+    setLiveQuizzes(quizzesWithAnalytics);
+    console.log('✅ [DASHBOARD] Live quizzes loaded via Supabase');
+  };
+
   useEffect(() => {
-    loadLiveQuizzes();
-    
-    // DISABLED: Stop API flooding - refresh only on user action
-    // const interval = setInterval(loadLiveQuizzes, 10000);
-    // setRefreshInterval(interval);
-    
-    return () => {
-      // Cleanup removed since auto-refresh is disabled
-    };
-  }, []);
+    // Wait for backend check to complete before loading
+    if (isUsingBackend !== null) {
+      loadLiveQuizzes();
+    }
+  }, [isUsingBackend, backendClient]);
 
   const getQuizStatus = (quiz: LiveQuiz) => {
     if (quiz.is_finished) return { text: 'Finished', color: 'text-red-400', bg: 'bg-red-400/20' };
